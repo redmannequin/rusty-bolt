@@ -20,6 +20,7 @@ impl fmt::Debug for Value {
             &Value::Boolean(ref value) => write!(f, "{:?}", value),
             &Value::Integer(ref value) => write!(f, "{:?}", value),
             &Value::String(ref value) => write!(f, "{:?}", value),
+//            &Value::List(ref values) => write!(f, "[{:?}]", values.connect(", ")),
             // TODO
             _ => write!(f, "?"),
         }
@@ -209,6 +210,10 @@ impl Unpacker {
             // TODO: C1
             0xC2 => Value::Boolean(false),
             0xC3 => Value::Boolean(true),
+            0xC8 => Value::Integer(self.unpack_i8() as i64),
+            0xC9 => Value::Integer(self.unpack_i16() as i64),
+            0xCA => Value::Integer(self.unpack_i32() as i64),
+            0xCB => Value::Integer(self.unpack_i64() as i64),
             0xD0 => {
                 let size: usize = self.unpack_u8() as usize;
                 self.unpack_string(size)
@@ -260,6 +265,34 @@ impl Unpacker {
         let value: u8 = self.buffer[self.unpack_ptr];
         self.unpack_ptr += 1;
         value
+    }
+
+    fn unpack_i8(&mut self) -> i8 {
+        let value: i8 = self.buffer[self.unpack_ptr] as i8;
+        self.unpack_ptr += 1;
+        value
+    }
+
+    fn unpack_i16(&mut self) -> i16 {
+        (self.unpack_i8() as i16) << 8 | self.unpack_u8() as i16
+    }
+
+    fn unpack_i32(&mut self) -> i32 {
+        (self.unpack_i8() as i32) << 24 |
+        (self.unpack_u8() as i32) << 16 |
+        (self.unpack_u8() as i32) << 8 |
+         self.unpack_u8() as i32
+    }
+
+    fn unpack_i64(&mut self) -> i64 {
+        (self.unpack_i8() as i64) << 56 |
+        (self.unpack_u8() as i64) << 48 |
+        (self.unpack_u8() as i64) << 40 |
+        (self.unpack_u8() as i64) << 32 |
+        (self.unpack_u8() as i64) << 24 |
+        (self.unpack_u8() as i64) << 16 |
+        (self.unpack_u8() as i64) << 8 |
+         self.unpack_u8() as i64
     }
 
 }
