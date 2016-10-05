@@ -13,6 +13,24 @@ pub enum Value {
     Structure { signature: u8, fields: Vec<Value> },
 }
 
+pub trait ValueCast {
+    fn to_value(&self) -> Value;
+}
+
+impl ValueCast for i64 {
+    fn to_value(&self) -> Value {
+        Value::Integer(*self)
+    }
+}
+
+impl ValueCast for &'static str {
+    fn to_value(&self) -> Value {
+        let mut s = String::with_capacity(self.len());
+        s.push_str(&self);
+        Value::String(s)
+    }
+}
+
 impl fmt::Debug for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -53,7 +71,7 @@ impl Packer {
         self.buffer.len()
     }
 
-    pub fn get_chunk(&mut self, start: usize, end: usize) -> &[u8] {
+    pub fn get_data(&mut self, start: usize, end: usize) -> &[u8] {
         &self.buffer[start..end]
     }
 

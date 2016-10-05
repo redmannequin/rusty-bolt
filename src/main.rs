@@ -1,4 +1,5 @@
 mod packstream;
+
 use packstream::{Value, Unpacker, Packer};
 
 use std::vec::Vec;
@@ -61,18 +62,20 @@ impl<'t> BoltStream<'t> {
         BoltStream { stream: stream, packer: Packer::new(), packer_marks: vec!(), unpacker: Unpacker::new()}
     }
 
-    fn send(&mut self) {
+    fn send_all(&mut self) {
         let mut offset: usize = 0;
         for &mark in &self.packer_marks {
-            let size: usize = mark - offset;
-            // TODO: size > MAX_CHUNK_SIZE
-            let chunk_header = [(size >> 8) as u8, size as u8];
-            let chunk_data = self.packer.get_chunk(offset, mark);
-            let _ = self.stream.write(&chunk_header).unwrap();
-            log!("C: [{:02X} {:02X}]", chunk_header[0], chunk_header[1]);
-            let _ = self.stream.write(&chunk_data).unwrap();
-            for i in 0..chunk_data.len() {
-                log!(" {:02X}", chunk_data[i]);
+            log!("C:");
+            for chunk_data in self.packer.get_data(offset, mark).chunks(MAX_CHUNK_SIZE) {
+                let chunk_size = chunk_data.len();
+                let chunk_header = [(chunk_size >> 8) as u8, chunk_size as u8];
+                let _ = self.stream.write(&chunk_header).unwrap();
+                log!(" [{:02X} {:02X}]", chunk_header[0], chunk_header[1]);
+
+                let _ = self.stream.write(&chunk_data).unwrap();
+                for i in 0..chunk_data.len() {
+                    log!(" {:02X}", chunk_data[i]);
+                }
             }
             let _ = self.stream.write(&[0, 0]).unwrap();
             log_line!(" [00 00]");
@@ -92,7 +95,7 @@ impl<'t> BoltStream<'t> {
     /**
      * Read the next message from the stream into the read buffer.
      */
-    fn fetch_message(&mut self, response: &mut Response) {
+    fn fetch(&mut self, response: &mut Response) {
         self.unpacker.clear();
         let mut chunk_size: usize = self._fetch_chunk_size();
         while chunk_size > 0 {
@@ -148,10 +151,11 @@ impl<'t> BoltStream<'t> {
         self.packer_marks.push(self.packer.len());
     }
 
-    fn pack_run(&mut self, statement: &str) {
+    fn pack_run(&mut self, statement: &str, parameters: HashMap<&str, Value>) {
         self.packer.pack_structure_header(2, 0x10);
         self.packer.pack_string(statement);
         self.packer.pack_map_header(0);
+        //println!("{:?}", parameters);
         self.packer_marks.push(self.packer.len());
     }
 
@@ -190,22 +194,32 @@ impl Response for DumpingResponse {
     }
 }
 
+macro_rules! parameters(
+    { $($key:expr => $value:expr),* } => {
+        {
+            let mut map : HashMap<&str, Value> = HashMap::new();
+            $(
+                map.insert($key, packstream::ValueCast::to_value(&$value));
+            )+;
+            map
+        }
+     };
+);
+
 fn main() {
     let mut out = connect("127.0.0.1:7687");
     let mut bolt = BoltStream::new(&mut out);
     let mut response = &mut DumpingResponse {};
 
     bolt.pack_init("neo4j", "password");
-    bolt.send();
-    bolt.fetch_message(response);
+    bolt.send_all();
+    bolt.fetch(response);
 
-    bolt.pack_run("UNWIND range(1, 3) AS n RETURN n");
+    bolt.pack_run("RETURN 1, 1000, 1000000, 1000000000, 1000000000000", parameters!("x" => 1i64, "y" => "hello"));
     bolt.pack_pull_all();
-    bolt.send();
-    bolt.fetch_message(response);  // SUCCESS (RUN)
-    bolt.fetch_message(response);  // RECORD
-    bolt.fetch_message(response);  // RECORD
-    bolt.fetch_message(response);  // RECORD
-    bolt.fetch_message(response);  // SUCCESS (PULL_ALL)
+    bolt.send_all();
+    bolt.fetch(response);  // SUCCESS (RUN)
+    bolt.fetch(response);  // RECORD
+    bolt.fetch(response);  // SUCCESS (PULL_ALL)
 
 }
