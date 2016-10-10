@@ -1,6 +1,6 @@
 mod packstream;
 
-use packstream::{Value, Unpacker, Packer};
+use packstream::{Value, Packer, Unpacker};
 
 use std::vec::Vec;
 use std::collections::HashMap;
@@ -12,26 +12,6 @@ const RAW_BOLT_VERSIONS: [u8; 16] = [0x00, 0x00, 0x00, 0x01,
                                      0x00, 0x00, 0x00, 0x00,
                                      0x00, 0x00, 0x00, 0x00,
                                      0x00, 0x00, 0x00, 0x00];
-
-fn connect(address: &str) -> TcpStream {
-    let mut stream = TcpStream::connect(address).unwrap();
-
-    let _ = stream.write(&BOLT);
-    let _ = stream.write(&RAW_BOLT_VERSIONS);
-    let mut buf = [0; 4];
-    let result = stream.read(&mut buf);
-    match result {
-        Ok(_) => {
-            let version: u32 = (buf[0] as u32) << 24 |
-                               (buf[1] as u32) << 16 |
-                               (buf[2] as u32) << 8 |
-                               (buf[3] as u32);
-            println!("Using Bolt v{}", version)
-        },
-        Err(e) => panic!("Got an error: {}", e),
-    }
-    return stream;
-}
 
 const MAX_CHUNK_SIZE: usize = 0xFFFF;
 const USER_AGENT: &'static str = "rusty-bolt/0.1.0";
@@ -50,15 +30,32 @@ macro_rules! log_line(
     } }
 );
 
-struct BoltStream<'t> {
-    stream: &'t mut TcpStream,
+struct BoltStream {
+    stream: TcpStream,
     packer: Packer,
     packer_marks: Vec<usize>,
     unpacker: Unpacker,
 }
 
-impl<'t> BoltStream<'t> {
-    fn new(stream: &mut TcpStream) -> BoltStream {
+impl BoltStream {
+    fn connect(address: &str) -> BoltStream {
+        let mut stream = TcpStream::connect(address).unwrap();
+
+        let _ = stream.write(&BOLT);
+        let _ = stream.write(&RAW_BOLT_VERSIONS);
+        let mut buf = [0; 4];
+        let result = stream.read(&mut buf);
+        match result {
+            Ok(_) => {
+                let version: u32 = (buf[0] as u32) << 24 |
+                                   (buf[1] as u32) << 16 |
+                                   (buf[2] as u32) << 8 |
+                                   (buf[3] as u32);
+                println!("Using Bolt v{}", version)
+            },
+            Err(e) => panic!("Got an error: {}", e),
+        }
+
         BoltStream { stream: stream, packer: Packer::new(), packer_marks: vec!(), unpacker: Unpacker::new()}
     }
 
@@ -66,7 +63,7 @@ impl<'t> BoltStream<'t> {
         let mut offset: usize = 0;
         for &mark in &self.packer_marks {
             log!("C:");
-            for chunk_data in self.packer.get_data(offset, mark).chunks(MAX_CHUNK_SIZE) {
+            for chunk_data in self.packer[offset..mark].chunks(MAX_CHUNK_SIZE) {
                 let chunk_size = chunk_data.len();
                 let chunk_header = [(chunk_size >> 8) as u8, chunk_size as u8];
                 let _ = self.stream.write(&chunk_header).unwrap();
@@ -95,7 +92,7 @@ impl<'t> BoltStream<'t> {
     /**
      * Read the next message from the stream into the read buffer.
      */
-    fn fetch(&mut self, response: &mut Response) {
+    fn fetch(&mut self, response: &Response) {
         self.unpacker.clear();
         let mut chunk_size: usize = self._fetch_chunk_size();
         while chunk_size > 0 {
@@ -156,6 +153,10 @@ impl<'t> BoltStream<'t> {
         self.packer.pack_string(statement);
         self.packer.pack_map_header(0);
         //println!("{:?}", parameters);
+        for (name, value) in &parameters {
+            self.packer.pack_string(name);
+            self.packer.pack(value);
+        }
         self.packer_marks.push(self.packer.len());
     }
 
@@ -167,29 +168,29 @@ impl<'t> BoltStream<'t> {
 }
 
 trait Response {
-    fn on_success(&mut self, metadata: &HashMap<String, Value>);
-    fn on_record(&mut self, data: &Vec<Value>);
-    fn on_ignored(&mut self, metadata: &HashMap<String, Value>);
-    fn on_failure(&mut self, metadata: &HashMap<String, Value>);
+    fn on_success(&self, metadata: &HashMap<String, Value>);
+    fn on_record(&self, data: &Vec<Value>);
+    fn on_ignored(&self, metadata: &HashMap<String, Value>);
+    fn on_failure(&self, metadata: &HashMap<String, Value>);
 }
 
 struct DumpingResponse {
 }
 
 impl Response for DumpingResponse {
-    fn on_success(&mut self, metadata: &HashMap<String, Value>) {
+    fn on_success(&self, metadata: &HashMap<String, Value>) {
         println!("S: SUCCESS {:?}", metadata);
     }
 
-    fn on_record(&mut self, data: &Vec<Value>) {
+    fn on_record(&self, data: &Vec<Value>) {
         println!("S: RECORD {:?}", data);
     }
 
-    fn on_ignored(&mut self, metadata: &HashMap<String, Value>) {
+    fn on_ignored(&self, metadata: &HashMap<String, Value>) {
         println!("S: IGNORED {:?}", metadata);
     }
 
-    fn on_failure(&mut self, metadata: &HashMap<String, Value>) {
+    fn on_failure(&self, metadata: &HashMap<String, Value>) {
         println!("S: FAILURE {:?}", metadata);
     }
 }
@@ -199,7 +200,7 @@ macro_rules! parameters(
         {
             let mut map : HashMap<&str, Value> = HashMap::new();
             $(
-                map.insert($key, packstream::ValueCast::to_value(&$value));
+                map.insert($key, packstream::ValueCast::from(&$value));
             )+;
             map
         }
@@ -207,19 +208,18 @@ macro_rules! parameters(
 );
 
 fn main() {
-    let mut out = connect("127.0.0.1:7687");
-    let mut bolt = BoltStream::new(&mut out);
-    let mut response = &mut DumpingResponse {};
+    let mut bolt = BoltStream::connect("127.0.0.1:7687");
+    let response = DumpingResponse{};
 
     bolt.pack_init("neo4j", "password");
     bolt.send_all();
-    bolt.fetch(response);
+    bolt.fetch(&response);
 
     bolt.pack_run("RETURN 1, 1000, 1000000, 1000000000, 1000000000000", parameters!("x" => 1i64, "y" => "hello"));
     bolt.pack_pull_all();
     bolt.send_all();
-    bolt.fetch(response);  // SUCCESS (RUN)
-    bolt.fetch(response);  // RECORD
-    bolt.fetch(response);  // SUCCESS (PULL_ALL)
+    bolt.fetch(&response);  // SUCCESS (RUN)
+    bolt.fetch(&response);  // RECORD
+    bolt.fetch(&response);  // SUCCESS (PULL_ALL)
 
 }
