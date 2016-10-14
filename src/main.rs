@@ -33,8 +33,8 @@ macro_rules! log_line(
 struct BoltStream {
     stream: TcpStream,
     packer: Packer,
-    packer_marks: Vec<usize>,
     unpacker: Unpacker,
+    request_markers: Vec<usize>,
 }
 
 impl BoltStream {
@@ -56,12 +56,13 @@ impl BoltStream {
             Err(e) => panic!("Got an error: {}", e),
         }
 
-        BoltStream { stream: stream, packer: Packer::new(), packer_marks: vec!(), unpacker: Unpacker::new()}
+        BoltStream { stream: stream, packer: Packer::new(), unpacker: Unpacker::new(),
+                     request_markers: vec!()}
     }
 
     fn send_all(&mut self) {
         let mut offset: usize = 0;
-        for &mark in &self.packer_marks {
+        for &mark in &self.request_markers {
             log!("C:");
             for chunk_data in self.packer[offset..mark].chunks(MAX_CHUNK_SIZE) {
                 let chunk_size = chunk_data.len();
@@ -79,7 +80,7 @@ impl BoltStream {
             offset = mark;
         }
         self.packer.clear();
-        self.packer_marks.clear();
+        self.request_markers.clear();
     }
 
     fn _fetch_chunk_size(&mut self) -> usize {
@@ -145,7 +146,7 @@ impl BoltStream {
         self.packer.pack_string(user);
         self.packer.pack_string("credentials");
         self.packer.pack_string(password);
-        self.packer_marks.push(self.packer.len());
+        self.request_markers.push(self.packer.len());
     }
 
     fn pack_run(&mut self, statement: &str, parameters: HashMap<&str, Value>) {
@@ -157,12 +158,12 @@ impl BoltStream {
             self.packer.pack_string(name);
             self.packer.pack(value);
         }
-        self.packer_marks.push(self.packer.len());
+        self.request_markers.push(self.packer.len());
     }
 
     fn pack_pull_all(&mut self) {
         self.packer.pack_structure_header(0, 0x3F);
-        self.packer_marks.push(self.packer.len());
+        self.request_markers.push(self.packer.len());
     }
 
 }
