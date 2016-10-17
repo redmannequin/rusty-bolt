@@ -142,13 +142,19 @@ impl BoltStream {
         }
     }
 
-    fn fetch_until_summary(&mut self) -> u8 {
+    fn fetch_response(&mut self) -> u8 {
         let mut signature = self.fetch();
         while signature != 0x70 && signature != 0x7E && signature != 0x7F {
             signature = self.fetch();
         }
-
         signature
+    }
+
+    fn sync(&mut self) {
+        self.send_all();
+        while !self.responses.is_empty() {
+            self.fetch_response();
+        }
     }
 
     fn pack_init<R: 'static + Response>(&mut self, user: &str, password: &str, response: R) {
@@ -168,8 +174,7 @@ impl BoltStream {
     fn pack_run<R: 'static + Response>(&mut self, statement: &str, parameters: HashMap<&str, Value>, response: R) {
         self.packer.pack_structure_header(2, 0x10);
         self.packer.pack_string(statement);
-        self.packer.pack_map_header(0);
-        //println!("{:?}", parameters);
+        self.packer.pack_map_header(parameters.len());
         for (name, value) in &parameters {
             self.packer.pack_string(name);
             self.packer.pack(value);
@@ -230,15 +235,10 @@ fn main() {
     let mut bolt = BoltStream::connect("127.0.0.1:7687");
 
     bolt.pack_init("neo4j", "password", DumpingResponse{});
-    bolt.send_all();
-    bolt.fetch_until_summary();
+    bolt.sync();
 
-    bolt.pack_run("RETURN $x, 1, 1000, 1000000, 1000000000, 1000000000000",
-                  parameters!("x" => 1i64, "y" => "hello"),
-                  DumpingResponse{});
+    bolt.pack_run("RETURN 1, $x, $y", parameters!("x" => 42, "y" => "hello"), DumpingResponse{});
     bolt.pack_pull_all(DumpingResponse{});
-    bolt.send_all();
-    bolt.fetch_until_summary();  // SUCCESS (RUN)
-    bolt.fetch_until_summary();  // SUCCESS (PULL_ALL)
+    bolt.sync();
 
 }
