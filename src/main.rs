@@ -94,8 +94,7 @@ impl BoltStream {
     /**
      * Read the next message from the stream into the read buffer.
      */
-    fn fetch(&mut self) {
-
+    fn fetch(&mut self) -> u8 {
         self.unpacker.clear();
         let mut chunk_size: usize = self._fetch_chunk_size();
         while chunk_size > 0 {
@@ -137,9 +136,19 @@ impl BoltStream {
                     },
                     _ => panic!("Unknown response message with signature {:02X}", signature),
                 }
+                return signature;
             },
             _ => panic!("Response message is not a structure"),
         }
+    }
+
+    fn fetch_until_summary(&mut self) -> u8 {
+        let mut signature = self.fetch();
+        while signature != 0x70 && signature != 0x7E && signature != 0x7F {
+            signature = self.fetch();
+        }
+
+        signature
     }
 
     fn pack_init<R: 'static + Response>(&mut self, user: &str, password: &str, response: R) {
@@ -222,15 +231,14 @@ fn main() {
 
     bolt.pack_init("neo4j", "password", DumpingResponse{});
     bolt.send_all();
-    bolt.fetch();
+    bolt.fetch_until_summary();
 
-    bolt.pack_run("RETURN 1, 1000, 1000000, 1000000000, 1000000000000",
+    bolt.pack_run("RETURN $x, 1, 1000, 1000000, 1000000000, 1000000000000",
                   parameters!("x" => 1i64, "y" => "hello"),
                   DumpingResponse{});
     bolt.pack_pull_all(DumpingResponse{});
     bolt.send_all();
-    bolt.fetch();  // SUCCESS (RUN)
-    bolt.fetch();  // RECORD
-    bolt.fetch();  // SUCCESS (PULL_ALL)
+    bolt.fetch_until_summary();  // SUCCESS (RUN)
+    bolt.fetch_until_summary();  // SUCCESS (PULL_ALL)
 
 }
