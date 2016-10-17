@@ -35,6 +35,7 @@ struct BoltStream {
     packer: Packer,
     unpacker: Unpacker,
     request_markers: Vec<usize>,
+    responses: Vec<Box<Response>>,
 }
 
 impl BoltStream {
@@ -57,7 +58,7 @@ impl BoltStream {
         }
 
         BoltStream { stream: stream, packer: Packer::new(), unpacker: Unpacker::new(),
-                     request_markers: vec!()}
+                     request_markers: vec!(), responses: vec!() }
     }
 
     fn send_all(&mut self) {
@@ -93,7 +94,8 @@ impl BoltStream {
     /**
      * Read the next message from the stream into the read buffer.
      */
-    fn fetch(&mut self, response: &Response) {
+    fn fetch(&mut self) {
+
         self.unpacker.clear();
         let mut chunk_size: usize = self._fetch_chunk_size();
         while chunk_size > 0 {
@@ -106,24 +108,28 @@ impl BoltStream {
             Value::Structure { signature, fields } => {
                 match signature {
                     0x70 => {
+                        let response = self.responses.remove(0);
                         match fields[0] {  // TODO: handle not enough fields
                             Value::Map(ref metadata) => response.on_success(metadata),
                             _ => panic!("SUCCESS metadata is not a map"),
                         }
                     },
                     0x71 => {
+                        let ref response = self.responses[0];
                         match fields[0] {  // TODO: handle not enough fields
                             Value::List(ref data) => response.on_record(data),
                             _ => panic!("RECORD data is not a list"),
                         }
                     },
                     0x7E => {
+                        let response = self.responses.remove(0);
                         match fields[0] {  // TODO: handle not enough fields
                             Value::Map(ref metadata) => response.on_ignored(metadata),
                             _ => panic!("IGNORED metadata is not a map"),
                         }
                     },
                     0x7F => {
+                        let response = self.responses.remove(0);
                         match fields[0] {  // TODO: handle not enough fields
                             Value::Map(ref metadata) => response.on_failure(metadata),
                             _ => panic!("FAILURE metadata is not a map"),
@@ -136,7 +142,7 @@ impl BoltStream {
         }
     }
 
-    fn pack_init(&mut self, user: &str, password: &str) {
+    fn pack_init<R: 'static + Response>(&mut self, user: &str, password: &str, response: R) {
         self.packer.pack_structure_header(2, 0x01);
         self.packer.pack_string(USER_AGENT);
         self.packer.pack_map_header(3);
@@ -147,9 +153,10 @@ impl BoltStream {
         self.packer.pack_string("credentials");
         self.packer.pack_string(password);
         self.request_markers.push(self.packer.len());
+        self.responses.push(Box::new(response));
     }
 
-    fn pack_run(&mut self, statement: &str, parameters: HashMap<&str, Value>) {
+    fn pack_run<R: 'static + Response>(&mut self, statement: &str, parameters: HashMap<&str, Value>, response: R) {
         self.packer.pack_structure_header(2, 0x10);
         self.packer.pack_string(statement);
         self.packer.pack_map_header(0);
@@ -159,11 +166,13 @@ impl BoltStream {
             self.packer.pack(value);
         }
         self.request_markers.push(self.packer.len());
+        self.responses.push(Box::new(response));
     }
 
-    fn pack_pull_all(&mut self) {
+    fn pack_pull_all<R: 'static + Response>(&mut self, response: R) {
         self.packer.pack_structure_header(0, 0x3F);
         self.request_markers.push(self.packer.len());
+        self.responses.push(Box::new(response));
     }
 
 }
@@ -210,17 +219,18 @@ macro_rules! parameters(
 
 fn main() {
     let mut bolt = BoltStream::connect("127.0.0.1:7687");
-    let response = DumpingResponse{};
 
-    bolt.pack_init("neo4j", "password");
+    bolt.pack_init("neo4j", "password", DumpingResponse{});
     bolt.send_all();
-    bolt.fetch(&response);
+    bolt.fetch();
 
-    bolt.pack_run("RETURN 1, 1000, 1000000, 1000000000, 1000000000000", parameters!("x" => 1i64, "y" => "hello"));
-    bolt.pack_pull_all();
+    bolt.pack_run("RETURN 1, 1000, 1000000, 1000000000, 1000000000000",
+                  parameters!("x" => 1i64, "y" => "hello"),
+                  DumpingResponse{});
+    bolt.pack_pull_all(DumpingResponse{});
     bolt.send_all();
-    bolt.fetch(&response);  // SUCCESS (RUN)
-    bolt.fetch(&response);  // RECORD
-    bolt.fetch(&response);  // SUCCESS (PULL_ALL)
+    bolt.fetch();  // SUCCESS (RUN)
+    bolt.fetch();  // RECORD
+    bolt.fetch();  // SUCCESS (PULL_ALL)
 
 }

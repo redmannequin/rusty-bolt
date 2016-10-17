@@ -416,6 +416,7 @@ impl Unpacker {
         Unpacker { buffer: vec![0u8; 0], unpack_ptr: 0 }
     }
 
+    #[allow(dead_code)]
     pub fn from_slice(src: &[u8]) -> Unpacker {
         Unpacker { buffer: src.to_vec(), unpack_ptr: 0 }
     }
