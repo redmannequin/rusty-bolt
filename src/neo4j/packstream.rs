@@ -279,7 +279,7 @@ impl Packer {
         }
     }
 
-    pub fn pack_float(&mut self, value: f64) {
+    pub fn pack_float(&mut self, _: f64) {
         // TODO
     }
 
