@@ -22,7 +22,7 @@ impl fmt::Debug for Value {
             Value::Boolean(ref value) => write!(f, "{:?}", value),
             Value::Integer(ref value) => write!(f, "{:?}", value),
             Value::String(ref value) => write!(f, "{:?}", value),
-//            &Value::List(ref values) => write!(f, "[{:?}]", values.connect(", ")),
+            Value::List(ref values) => write!(f, "{:?}", values),
             // TODO
             _ => write!(f, "?"),
         }
@@ -31,6 +31,36 @@ impl fmt::Debug for Value {
 
 pub trait ValueCast {
     fn from(&self) -> Value;
+}
+
+macro_rules! impl_ValueCast_to_Integer {
+    ($T:ty) => {
+        impl ValueCast for $T {
+            fn from(&self) -> Value {
+               Value::Integer(*self as i64)
+            }
+        }
+    }
+}
+
+macro_rules! impl_ValueCast_to_Float {
+    ($T:ty) => {
+        impl ValueCast for $T {
+            fn from(&self) -> Value {
+               Value::Float(*self as f64)
+            }
+        }
+    }
+}
+
+macro_rules! impl_ValueCast_to_List {
+    ($T:ty) => {
+        impl ValueCast for $T {
+            fn from(&self) -> Value {
+               Value::List(self.iter().map(|&x| ValueCast::from(&x)).collect::<Vec<Value>>())
+            }
+        }
+    }
 }
 
 impl ValueCast for bool {
@@ -47,77 +77,44 @@ impl ValueCast for char {
     }
 }
 
-impl ValueCast for i8 {
-    fn from(&self) -> Value {
-        Value::Integer(*self as i64)
-    }
-}
+impl_ValueCast_to_Integer!(i8);
+impl_ValueCast_to_Integer!(i16);
+impl_ValueCast_to_Integer!(i32);
+impl_ValueCast_to_Integer!(i64);
+impl_ValueCast_to_Integer!(isize);
 
-impl ValueCast for i16 {
-    fn from(&self) -> Value {
-        Value::Integer(*self as i64)
-    }
-}
+impl_ValueCast_to_Integer!(u8);
+impl_ValueCast_to_Integer!(u16);
+impl_ValueCast_to_Integer!(u32);
+impl_ValueCast_to_Integer!(u64);
+impl_ValueCast_to_Integer!(usize);
 
-impl ValueCast for i32 {
-    fn from(&self) -> Value {
-        Value::Integer(*self as i64)
-    }
-}
+impl_ValueCast_to_Float!(f32);
+impl_ValueCast_to_Float!(f64);
 
-impl ValueCast for i64 {
-    fn from(&self) -> Value {
-        Value::Integer(*self)
-    }
-}
+impl_ValueCast_to_List!([i8]);
+impl_ValueCast_to_List!([i16]);
+impl_ValueCast_to_List!([i32]);
+impl_ValueCast_to_List!([i64]);
+impl_ValueCast_to_List!([isize]);
 
-impl ValueCast for isize {
-    fn from(&self) -> Value {
-        Value::Integer(*self as i64)
-    }
-}
+impl_ValueCast_to_List!([u8]);
+impl_ValueCast_to_List!([u16]);
+impl_ValueCast_to_List!([u32]);
+impl_ValueCast_to_List!([u64]);
+impl_ValueCast_to_List!([usize]);
 
-impl ValueCast for u8 {
-    fn from(&self) -> Value {
-        Value::Integer(*self as i64)
-    }
-}
+impl_ValueCast_to_List!(Vec<i8>);
+impl_ValueCast_to_List!(Vec<i16>);
+impl_ValueCast_to_List!(Vec<i32>);
+impl_ValueCast_to_List!(Vec<i64>);
+impl_ValueCast_to_List!(Vec<isize>);
 
-impl ValueCast for u16 {
-    fn from(&self) -> Value {
-        Value::Integer(*self as i64)
-    }
-}
-
-impl ValueCast for u32 {
-    fn from(&self) -> Value {
-        Value::Integer(*self as i64)
-    }
-}
-
-impl ValueCast for u64 {
-    fn from(&self) -> Value {
-        Value::Integer(*self as i64)
-    }
-}
-
-impl ValueCast for usize {
-    fn from(&self) -> Value {
-        Value::Integer(*self as i64)
-    }
-}
-
-impl ValueCast for f32 {
-    fn from(&self) -> Value {
-        Value::Float(*self as f64)
-    }
-}
-
-impl ValueCast for f64 {
-    fn from(&self) -> Value {
-        Value::Float(*self)
-    }
-}
+impl_ValueCast_to_List!(Vec<u8>);
+impl_ValueCast_to_List!(Vec<u16>);
+impl_ValueCast_to_List!(Vec<u32>);
+impl_ValueCast_to_List!(Vec<u64>);
+impl_ValueCast_to_List!(Vec<usize>);
 
 impl ValueCast for &'static str {
     fn from(&self) -> Value {

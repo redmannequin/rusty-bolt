@@ -1,7 +1,7 @@
 use std::vec::Vec;
 use std::collections::HashMap;
 use std::io::prelude::*;
-use std::net::TcpStream;
+use std::net::{TcpStream, ToSocketAddrs};
 
 use neo4j::packstream::{Value, Packer, Unpacker};
 
@@ -23,7 +23,7 @@ pub struct BoltStream {
 }
 
 impl BoltStream {
-    pub fn connect(address: &str) -> BoltStream {
+    pub fn connect<A: ToSocketAddrs>(address: A) -> BoltStream {
         let mut stream = TcpStream::connect(address).unwrap();
 
         let _ = stream.write(&BOLT);
