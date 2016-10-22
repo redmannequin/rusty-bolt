@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 mod neo4j;
 use neo4j::bolt::{BoltStream, Response};
-use neo4j::packstream::{Value};
+use neo4j::packstream::{Value, ValueCast};
 
 struct LoggingResponse;
 impl Response for LoggingResponse {
@@ -44,15 +44,19 @@ impl log::Log for SimpleLogger {
 }
 
 macro_rules! parameters(
+    {} => {
+        HashMap::new()
+    };
+
     { $($key:expr => $value:expr),* } => {
         {
-            let mut map : std::collections::HashMap<&str, neo4j::packstream::Value> = std::collections::HashMap::new();
+            let mut map : HashMap<&str, Value> = HashMap::new();
             $(
-                map.insert($key, neo4j::packstream::ValueCast::from(&$value));
-            )*;
+                map.insert($key, ValueCast::from(&$value));
+            )+;
             map
         }
-     };
+    };
 );
 
 struct GraphDatabase {}
