@@ -45,23 +45,17 @@ impl BoltStream {
                      request_markers: vec!(), responses: vec!() }
     }
 
-    pub fn send_all(&mut self) {
+    /// Send all queued outgoing messages
+    pub fn send(&mut self) {
+        info!("C: <SEND>");
         let mut offset: usize = 0;
         for &mark in &self.request_markers {
-            //log!("C:");
             for chunk_data in self.packer[offset..mark].chunks(MAX_CHUNK_SIZE) {
                 let chunk_size = chunk_data.len();
-                let chunk_header = [(chunk_size >> 8) as u8, chunk_size as u8];
-                let _ = self.stream.write(&chunk_header).unwrap();
-                //log!(" [{:02X} {:02X}]", chunk_header[0], chunk_header[1]);
-
+                let _ = self.stream.write(&[(chunk_size >> 8) as u8, chunk_size as u8]).unwrap();
                 let _ = self.stream.write(&chunk_data).unwrap();
-//                for i in 0..chunk_data.len() {
-//                    log!(" {:02X}", chunk_data[i]);
-//                }
             }
             let _ = self.stream.write(&[0, 0]).unwrap();
-//            log_line!(" [00 00]");
             offset = mark;
         }
         self.packer.clear();
@@ -75,9 +69,7 @@ impl BoltStream {
         0x100 * chunk_header[0] as usize + chunk_header[1] as usize
     }
 
-    /**
-     * Read the next message from the stream into the read buffer.
-     */
+    /// Read the next message from the stream into the read buffer.
     pub fn fetch(&mut self) -> u8 {
         self.unpacker.clear();
         let mut chunk_size: usize = self._fetch_chunk_size();
@@ -135,13 +127,14 @@ impl BoltStream {
     }
 
     pub fn sync(&mut self) {
-        self.send_all();
+        self.send();
         while !self.responses.is_empty() {
             self.fetch_response();
         }
     }
 
     pub fn pack_init<R: 'static + Response>(&mut self, user: &str, password: &str, response: R) {
+        info!("C: INIT {:?} {{\"scheme\": \"basic\", \"principal\": {:?}, \"credentials\": \"...\"}}", USER_AGENT, user);
         self.packer.pack_structure_header(2, 0x01);
         self.packer.pack_string(USER_AGENT);
         self.packer.pack_map_header(3);
@@ -156,6 +149,7 @@ impl BoltStream {
     }
 
     pub fn pack_run<R: 'static + Response>(&mut self, statement: &str, parameters: HashMap<&str, Value>, response: R) {
+        info!("C: RUN {:?} {:?}", statement, parameters);
         self.packer.pack_structure_header(2, 0x10);
         self.packer.pack_string(statement);
         self.packer.pack_map_header(parameters.len());
@@ -168,6 +162,7 @@ impl BoltStream {
     }
 
     pub fn pack_pull_all<R: 'static + Response>(&mut self, response: R) {
+        info!("C: PULL_ALL");
         self.packer.pack_structure_header(0, 0x3F);
         self.request_markers.push(self.packer.len());
         self.responses.push(Box::new(response));
