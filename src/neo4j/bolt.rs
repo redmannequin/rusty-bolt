@@ -85,30 +85,43 @@ impl BoltStream {
                     0x70 => {
                         let response = self.responses.remove(0);
                         match fields[0] {  // TODO: handle not enough fields
-                            Value::Map(ref metadata) => response.on_success(metadata),
+                            Value::Map(ref metadata) => {
+                                info!("S: SUCCESS {:?}", metadata);
+                                response.on_success(metadata)
+                            },
                             _ => panic!("SUCCESS metadata is not a map"),
                         }
                     },
                     0x71 => {
                         let ref response = self.responses[0];
                         match fields[0] {  // TODO: handle not enough fields
-                            Value::List(ref data) => response.on_record(data),
+                            Value::List(ref data) => {
+                                info!("S: RECORD {:?}", data);
+                                response.on_record(data)
+                            },
                             _ => panic!("RECORD data is not a list"),
                         }
                     },
                     0x7E => {
                         let response = self.responses.remove(0);
                         match fields[0] {  // TODO: handle not enough fields
-                            Value::Map(ref metadata) => response.on_ignored(metadata),
+                            Value::Map(ref metadata) => {
+                                info!("S: IGNORED {:?}", metadata);
+                                response.on_ignored(metadata)
+                            },
                             _ => panic!("IGNORED metadata is not a map"),
                         }
                     },
                     0x7F => {
                         let response = self.responses.remove(0);
                         match fields[0] {  // TODO: handle not enough fields
-                            Value::Map(ref metadata) => response.on_failure(metadata),
+                            Value::Map(ref metadata) => {
+                                info!("S: FAILURE {:?}", metadata);
+                                response.on_failure(metadata)
+                            },
                             _ => panic!("FAILURE metadata is not a map"),
                         }
+                        self.pack_ack_failure(AckFailureResponse {});
                     },
                     _ => panic!("Unknown response message with signature {:02X}", signature),
                 }
@@ -196,6 +209,24 @@ pub trait Response {
     fn on_record(&self, data: &Vec<Value>);
     fn on_ignored(&self, metadata: &HashMap<String, Value>);
     fn on_failure(&self, metadata: &HashMap<String, Value>);
+}
+struct AckFailureResponse;
+impl Response for AckFailureResponse {
+    fn on_success(&self, _: &HashMap<String, Value>) {
+        //
+    }
+
+    fn on_record(&self, _: &Vec<Value>) {
+        panic!();
+    }
+
+    fn on_ignored(&self, _: &HashMap<String, Value>) {
+        //
+    }
+
+    fn on_failure(&self, _: &HashMap<String, Value>) {
+        panic!();
+    }
 }
 
 #[cfg(test)]
