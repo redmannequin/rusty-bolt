@@ -1,4 +1,3 @@
-
 use std::vec::Vec;
 use std::collections::HashMap;
 
@@ -77,6 +76,31 @@ impl Session for NetworkSession {
         self.connection.sync();
     }
 }
+
+#[macro_export]
+macro_rules! parameters(
+    {} => {
+        {
+            use std::collections::HashMap;
+
+            HashMap::new()
+        }
+    };
+
+    { $($key:expr => $value:expr),* } => {
+        {
+            use std::collections::HashMap;
+            use $crate::neo4j::packstream::{Value, ValueCast};
+
+            let mut map : HashMap<&str, Value> = HashMap::new();
+            $(
+                map.insert($key, ValueCast::from(&$value));
+            )+;
+
+            map
+        }
+    };
+);
 
 #[cfg(test)]
 mod test {

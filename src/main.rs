@@ -1,10 +1,6 @@
 #[macro_use]
 extern crate log;
-mod neo4j;
-
-use std::collections::HashMap;
 use log::{LogRecord, LogLevel, LogMetadata};
-use neo4j::v1::GraphDatabase;
 
 struct SimpleLogger;
 
@@ -20,21 +16,11 @@ impl log::Log for SimpleLogger {
     }
 }
 
-macro_rules! parameters(
-    {} => {
-        HashMap::new()
-    };
+//////////////////////////////////////////////////////////////////////
 
-    { $($key:expr => $value:expr),* } => {
-        {
-            let mut map : HashMap<&str, neo4j::packstream::Value> = HashMap::new();
-            $(
-                map.insert($key, neo4j::packstream::ValueCast::from(&$value));
-            )+;
-            map
-        }
-    };
-);
+#[macro_use]
+mod neo4j;
+use neo4j::v1::GraphDatabase;
 
 fn main() {
     let _ = log::set_logger(|max_log_level| {
@@ -48,5 +34,4 @@ fn main() {
     session.run("RETURN $y", parameters!("y" => "hello, world"));
     session.run("UNWIND range(1, 3) AS n RETURN n", parameters!());
     session.sync();
-
 }
