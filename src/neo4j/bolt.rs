@@ -148,6 +148,20 @@ impl BoltStream {
         self.responses.push(Box::new(response));
     }
 
+    pub fn pack_ack_failure<R: 'static + Response>(&mut self, response: R) {
+        info!("C: ACK_FAILURE");
+        self.packer.pack_structure_header(0, 0x0E);
+        self.request_markers.push(self.packer.len());
+        self.responses.push(Box::new(response));
+    }
+
+    pub fn pack_reset<R: 'static + Response>(&mut self, response: R) {
+        info!("C: RESET");
+        self.packer.pack_structure_header(0, 0x0F);
+        self.request_markers.push(self.packer.len());
+        self.responses.push(Box::new(response));
+    }
+
     pub fn pack_run<R: 'static + Response>(&mut self, statement: &str, parameters: HashMap<&str, Value>, response: R) {
         info!("C: RUN {:?} {:?}", statement, parameters);
         self.packer.pack_structure_header(2, 0x10);
@@ -157,6 +171,13 @@ impl BoltStream {
             self.packer.pack_string(name);
             self.packer.pack(value);
         }
+        self.request_markers.push(self.packer.len());
+        self.responses.push(Box::new(response));
+    }
+
+    pub fn pack_discard_all<R: 'static + Response>(&mut self, response: R) {
+        info!("C: DISCARD_ALL");
+        self.packer.pack_structure_header(0, 0x2F);
         self.request_markers.push(self.packer.len());
         self.responses.push(Box::new(response));
     }
