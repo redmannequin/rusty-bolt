@@ -197,3 +197,8 @@ pub trait Response {
     fn on_ignored(&self, metadata: &HashMap<String, Value>);
     fn on_failure(&self, metadata: &HashMap<String, Value>);
 }
+
+#[cfg(test)]
+mod test {
+
+}

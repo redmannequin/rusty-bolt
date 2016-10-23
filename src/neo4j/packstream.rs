@@ -531,8 +531,8 @@ impl Unpacker {
 }
 
 #[cfg(test)]
-mod tests {
-    use packstream::{Value, ValueCast, ValueMatch, Packer, Unpacker};
+mod test {
+    use neo4j::packstream::{Value, ValueCast, ValueMatch, Packer, Unpacker};
 
     #[test]
     fn should_cast_value_from_true() {
