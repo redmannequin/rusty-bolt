@@ -20,7 +20,7 @@ impl log::Log for SimpleLogger {
 
 #[macro_use]
 mod neo4j;
-use neo4j::v1::GraphDatabase;
+use neo4j::graph::Graph;
 
 fn main() {
     let _ = log::set_logger(|max_log_level| {
@@ -28,8 +28,8 @@ fn main() {
         Box::new(SimpleLogger)
     });
 
-    let driver = GraphDatabase::driver("127.0.0.1:7687", "neo4j", "password");
-    let mut session = driver.session();
+    let graph = Graph::connect("127.0.0.1:7687", "neo4j", "password");
+    let mut session = graph.session();
     session.run("RETURN $x", parameters!("x" => vec!(-256, -255, -128, -127, -16, -15, -1, 0, 1, 15, 16, 127, 128, 255, 256)));
     session.run("RETURN $y", parameters!("y" => "hello, world"));
     session.run("UNWIND range(1, 3) AS n RETURN n", parameters!());

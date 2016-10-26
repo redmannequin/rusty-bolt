@@ -51,31 +51,31 @@ impl Response for DummyResponse {
 
 // GRAPH DATABASE //
 
-pub struct GraphDatabase {}
-impl GraphDatabase {
-    pub fn driver(address: &str, user: &str, password: &str) -> Box<Driver> {
-        Box::new(DirectDriver::new(address, user, password))
+pub struct Graph {}
+impl Graph {
+    pub fn connect(address: &str, user: &str, password: &str) -> Box<GraphConnector> {
+        Box::new(DirectGraphConnector::new(address, user, password))
     }
 }
 
 
 // DRIVER //
 
-pub trait Driver {
+pub trait GraphConnector {
     fn session(&self) -> Box<Session>;
 }
-struct DirectDriver {
+struct DirectGraphConnector {
     address: String,
     user: String,
     password: String,
 }
-impl DirectDriver {
-    pub fn new(address: &str, user: &str, password: &str) -> DirectDriver {
-        DirectDriver { address: String::from(address),
+impl DirectGraphConnector {
+    pub fn new(address: &str, user: &str, password: &str) -> DirectGraphConnector {
+        DirectGraphConnector { address: String::from(address),
                        user: String::from(user), password: String::from(password) }
     }
 }
-impl Driver for DirectDriver {
+impl GraphConnector for DirectGraphConnector {
     fn session(&self) -> Box<Session> {
         Box::new(NetworkSession::new(&self.address[..], &self.user[..], &self.password[..]))
     }
