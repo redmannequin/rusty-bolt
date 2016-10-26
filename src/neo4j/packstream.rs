@@ -230,49 +230,48 @@ impl Packer {
     }
 
     pub fn pack_null(&mut self) {
-        let _ = self.write_slice(&[0xC0]);
+        self.write(0xC0);
     }
 
     pub fn pack_boolean(&mut self, value: bool) {
         if value {
-            let _ = self.write_slice(&[0xC3]);
-        }
-        else {
-            let _ = self.write_slice(&[0xC2]);
+            self.write(0xC3);
+        } else {
+            self.write(0xC2);
         }
     }
 
     pub fn pack_integer(&mut self, value: i64) {
         if -0x10 <= value && value < 0x80 {
             // TINY_INT
-            let _ = self.write_slice(&[value as u8]);
-        }
-        else if -0x80 <= value && value < 0x80 {
+            self.write(value as u8);
+        } else if -0x80 <= value && value < 0x80 {
             // INT_8
-            let _ = self.write_slice(&[0xC8, value as u8]);
-        }
-        else if -0x8000 <= value && value < 0x8000 {
+            self.write(0xC8);
+            self.write(value as u8);
+        } else if -0x8000 <= value && value < 0x8000 {
             // INT_16
-            let _ = self.write_slice(&[0xC9, (value >> 8) as u8,
-                                              value       as u8]);
-        }
-        else if -0x80000000 <= value && value < 0x80000000 {
+            self.write(0xC9);
+            self.write((value >> 8) as u8);
+            self.write(value as u8);
+        } else if -0x80000000 <= value && value < 0x80000000 {
             // INT_32
-            let _ = self.write_slice(&[0xCA, (value >> 24) as u8,
-                                             (value >> 16) as u8,
-                                             (value >> 8)  as u8,
-                                              value        as u8]);
-        }
-        else {
+            self.write(0xCA);
+            self.write((value >> 24) as u8);
+            self.write((value >> 16) as u8);
+            self.write((value >> 8) as u8);
+            self.write(value as u8);
+        } else {
             // INT_64
-            let _ = self.write_slice(&[0xCB, (value >> 56) as u8,
-                                             (value >> 48) as u8,
-                                             (value >> 40) as u8,
-                                             (value >> 32) as u8,
-                                             (value >> 24) as u8,
-                                             (value >> 16) as u8,
-                                             (value >> 8)  as u8,
-                                              value        as u8]);
+            self.write(0xCB);
+            self.write((value >> 56) as u8);
+            self.write((value >> 48) as u8);
+            self.write((value >> 40) as u8);
+            self.write((value >> 32) as u8);
+            self.write((value >> 24) as u8);
+            self.write((value >> 16) as u8);
+            self.write((value >> 8) as u8);
+            self.write(value as u8);
         }
     }
 
@@ -283,75 +282,88 @@ impl Packer {
     pub fn pack_string(&mut self, value: &str) {
         let size: usize = value.len();
         if size < 0x10 {
-            let _ = self.write_slice(&[0x80 + size as u8]);
-        }
-        else if size < 0x100 {
-            let _ = self.write_slice(&[0xD0, size as u8]);
-        }
-        else if size < 0x10000 {
-            let _ = self.write_slice(&[0xD1, (size >> 8) as u8, size as u8]);
-        }
-        else if size < 0x100000000 {
-            let _ = self.write_slice(&[0xD2, (size >> 24) as u8, (size >> 16) as u8,
-                                             (size >> 8) as u8, size as u8]);
-        }
-        else {
+            self.write(0x80 + size as u8);
+        } else if size < 0x100 {
+            self.write(0xD0);
+            self.write(size as u8);
+        } else if size < 0x10000 {
+            self.write(0xD1);
+            self.write((size >> 8) as u8);
+            self.write(size as u8);
+        } else if size < 0x100000000 {
+            self.write(0xD2);
+            self.write((size >> 24) as u8);
+            self.write((size >> 16) as u8);
+            self.write((size >> 8) as u8);
+            self.write(size as u8);
+        } else {
             panic!("String too long to pack");
         }
-        let _ = self.write_slice(value.as_bytes());
+        self.write_slice(value.as_bytes());
     }
 
     pub fn pack_list_header(&mut self, size: usize) {
         if size < 0x10 {
-            let _ = self.write_slice(&[0x90 + size as u8]);
-        }
-        else if size < 0x100 {
-            let _ = self.write_slice(&[0xD4, size as u8]);
-        }
-        else if size < 0x10000 {
-            let _ = self.write_slice(&[0xD5, (size >> 8) as u8, size as u8]);
-        }
-        else if size < 0x100000000 {
-            let _ = self.write_slice(&[0xD6, (size >> 24) as u8, (size >> 16) as u8,
-                                             (size >> 8) as u8, size as u8]);
-        }
-        else {
+            self.write(0x90 + size as u8);
+        } else if size < 0x100 {
+            self.write(0xD4);
+            self.write(size as u8);
+        } else if size < 0x10000 {
+            self.write(0xD5);
+            self.write((size >> 8) as u8);
+            self.write(size as u8);
+        } else if size < 0x100000000 {
+            self.write(0xD6);
+            self.write((size >> 24) as u8);
+            self.write((size >> 16) as u8);
+            self.write((size >> 8) as u8);
+            self.write(size as u8);
+        } else {
             panic!("List too big to pack");
         }
     }
 
     pub fn pack_map_header(&mut self, size: usize) {
         if size < 0x10 {
-            let _ = self.write_slice(&[0xA0 + size as u8]);
-        }
-        else if size < 0x100 {
-            let _ = self.write_slice(&[0xD8, size as u8]);
-        }
-        else if size < 0x10000 {
-            let _ = self.write_slice(&[0xD9, (size >> 8) as u8, size as u8]);
-        }
-        else if size < 0x100000000 {
-            let _ = self.write_slice(&[0xDA, (size >> 24) as u8, (size >> 16) as u8,
-                                             (size >> 8) as u8, size as u8]);
-        }
-        else {
+            self.write(0xA0 + size as u8);
+        } else if size < 0x100 {
+            self.write(0xD8);
+            self.write(size as u8);
+        } else if size < 0x10000 {
+            self.write(0xD9);
+            self.write((size >> 8) as u8);
+            self.write(size as u8);
+        } else if size < 0x100000000 {
+            self.write(0xDA);
+            self.write((size >> 24) as u8);
+            self.write((size >> 16) as u8);
+            self.write((size >> 8) as u8);
+            self.write(size as u8);
+        } else {
             panic!("Map too big to pack");
         }
     }
 
     pub fn pack_structure_header(&mut self, size: usize, signature: u8) {
         if size < 0x10 {
-            let _ = self.write_slice(&[0xB0 + size as u8, signature]);
-        }
-        else if size < 0x100 {
-            let _ = self.write_slice(&[0xDC, size as u8, signature]);
-        }
-        else if size < 0x10000 {
-            let _ = self.write_slice(&[0xDD, (size >> 8) as u8, size as u8, signature]);
-        }
-        else {
+            self.write(0xB0 + size as u8);
+        } else if size < 0x100 {
+            self.write(0xDC);
+            self.write(size as u8);
+        } else if size < 0x10000 {
+            self.write(0xDD);
+            self.write((size >> 8) as u8);
+            self.write(size as u8);
+        } else {
             panic!("Structure too big to pack");
         }
+        self.write(signature);
+    }
+
+    fn write(&mut self, value: u8) {
+        let index: usize = self.buffer.len();
+        self.buffer.resize(index + 1, 0);
+        self.buffer[index] = value;
     }
 
     fn write_slice(&mut self, buf: &[u8]) {
