@@ -49,70 +49,81 @@ impl Response for DummyResponse {
 }
 
 
-// GRAPH DATABASE //
+// GRAPH //
 
 pub struct Graph {}
 impl Graph {
-    pub fn connect(address: &str, user: &str, password: &str) -> Box<GraphConnector> {
-        Box::new(DirectGraphConnector::new(address, user, password))
+    pub fn new(address: &str, user: &str, password: &str) -> Box<GraphConnector> {
+        Box::new(DirectBoltConnector::new(address, user, password))
     }
 }
 
 
-// DRIVER //
+// GRAPH CONNECTOR //
 
 pub trait GraphConnector {
-    fn session(&self) -> Box<Session>;
+    fn connect(&self) -> Box<GraphConnection>;
 }
-struct DirectGraphConnector {
+struct DirectBoltConnector {
     address: String,
     user: String,
     password: String,
 }
-impl DirectGraphConnector {
-    pub fn new(address: &str, user: &str, password: &str) -> DirectGraphConnector {
-        DirectGraphConnector { address: String::from(address),
+impl DirectBoltConnector {
+    pub fn new(address: &str, user: &str, password: &str) -> DirectBoltConnector {
+        DirectBoltConnector { address: String::from(address),
                        user: String::from(user), password: String::from(password) }
     }
 }
-impl GraphConnector for DirectGraphConnector {
-    fn session(&self) -> Box<Session> {
-        Box::new(NetworkSession::new(&self.address[..], &self.user[..], &self.password[..]))
+impl GraphConnector for DirectBoltConnector {
+    fn connect(&self) -> Box<GraphConnection> {
+        Box::new(DirectBoltConnection::new(&self.address[..], &self.user[..], &self.password[..]))
     }
 }
 
 
-// SESSION //
+// GRAPH CONNECTION //
 
-pub trait Session {
-    //fn begin(&mut self) -> Box<Transaction<'t>>;
+pub trait GraphConnection {
+    fn begin(&mut self);
+    fn commit(&mut self);
     fn reset(&mut self);
+    fn rollback(&mut self);
     fn run(&mut self, statement: &str, parameters: HashMap<&str, Value>);
     fn sync(&mut self);
 }
-struct NetworkSession {
+struct DirectBoltConnection {
     connection: BoltStream,
-    //transaction: Option<Box<Transaction<'t>>>,
 }
-impl NetworkSession {
-    pub fn new(address: &str, user: &str, password: &str) -> NetworkSession {
+impl DirectBoltConnection {
+    pub fn new(address: &str, user: &str, password: &str) -> DirectBoltConnection {
         let mut connection = BoltStream::connect(address);
         connection.pack_init(user, password, DummyResponse {});
         connection.sync();
 
-        NetworkSession { connection: connection, /*transaction: None*/ }
+        DirectBoltConnection { connection: connection, }
     }
 }
-impl Session for NetworkSession {
-//    fn begin(&mut self) -> Box<Transaction<'t>> {
-//        let tx = Box::new(ExplicitTransaction::new(self));
-//        self.transaction = Some(tx);
-//        tx
-//    }
+impl GraphConnection for DirectBoltConnection {
+
+    fn begin(&mut self) {
+        self.connection.pack_run("BEGIN", parameters!(), DummyResponse {});
+        self.connection.pack_discard_all(DummyResponse {});
+    }
+
+    fn commit(&mut self) {
+        self.connection.pack_run("COMMIT", parameters!(), DummyResponse {});
+        self.connection.pack_discard_all(DummyResponse {});
+    }
 
     fn reset(&mut self) {
         self.connection.pack_reset(DummyResponse {});
         self.connection.sync();
+    }
+
+    fn rollback(&mut self) {
+        self.connection.pack_run("ROLLBACK", parameters!(), DummyResponse {});
+        self.connection.pack_discard_all(DummyResponse {});
     }
 
     fn run(&mut self, statement: &str, parameters: HashMap<&str, Value>) {
@@ -124,39 +135,6 @@ impl Session for NetworkSession {
         self.connection.sync();
     }
 }
-
-
-// TRANSACTION //
-
-//pub trait Transaction<'t> {
-//    fn taint(&mut self);
-//}
-//struct ExplicitTransaction<'t> {
-//    session: &'t mut Session<'t>,
-//    tainted: bool,
-//}
-//impl<'t> ExplicitTransaction<'t> {
-//    fn new(session: &mut Session) -> ExplicitTransaction<'t> {
-//        session.run("BEGIN", parameters!());
-//        ExplicitTransaction {session: session, tainted: false}
-//    }
-//}
-//impl<'t> Transaction<'t> for ExplicitTransaction<'t> {
-//    fn taint(&mut self) {
-//        self.tainted = true;
-//    }
-//}
-//impl<'t> Drop for ExplicitTransaction<'t> {
-//    fn drop(&mut self) {
-//        if self.tainted {
-//            self.session.run("ROLLBACK", parameters!());
-//        }
-//        else {
-//            self.session.run("COMMIT", parameters!());
-//        }
-//        self.session.sync();
-//    }
-//}
 
 #[cfg(test)]
 mod test {

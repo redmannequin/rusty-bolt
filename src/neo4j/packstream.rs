@@ -21,10 +21,11 @@ impl fmt::Debug for Value {
             Value::Null => write!(f, "null"),
             Value::Boolean(ref value) => write!(f, "{:?}", value),
             Value::Integer(ref value) => write!(f, "{:?}", value),
+            Value::Float(ref value) => write!(f, "{:?}", value),
             Value::String(ref value) => write!(f, "{:?}", value),
             Value::List(ref values) => write!(f, "{:?}", values),
-            // TODO
-            _ => write!(f, "?"),
+            Value::Map(ref values) => write!(f, "{:?}", values),
+            Value::Structure { signature, ref fields } => write!(f, "#{:02X} {:?}", signature, fields),
         }
     }
 }
