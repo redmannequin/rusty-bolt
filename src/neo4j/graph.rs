@@ -114,6 +114,7 @@ impl GraphConnection for DirectBoltConnection {
     fn commit(&mut self) {
         self.connection.pack_run("COMMIT", parameters!(), DummyResponse {});
         self.connection.pack_discard_all(DummyResponse {});
+        self.connection.sync();
     }
 
     fn reset(&mut self) {
@@ -124,6 +125,7 @@ impl GraphConnection for DirectBoltConnection {
     fn rollback(&mut self) {
         self.connection.pack_run("ROLLBACK", parameters!(), DummyResponse {});
         self.connection.pack_discard_all(DummyResponse {});
+        self.connection.sync();
     }
 
     fn run(&mut self, statement: &str, parameters: HashMap<&str, Value>) {

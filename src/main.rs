@@ -31,7 +31,7 @@ fn main() {
     let graph = Graph::new("127.0.0.1:7687", "neo4j", "password");
     let mut connection = graph.connect();
     connection.begin();
-    connection.run("CREATE (a:Person {name:'Alice'}) RETURN a", parameters!());
+    connection.run("CREATE (a:Person {name:$name}) RETURN a", parameters!("name" => "Alice"));
     connection.commit();
 
 //    connection.run("RETURN $x", parameters!("x" => vec!(-256, -255, -128, -127, -16, -15, -1, 0, 1, 15, 16, 127, 128, 255, 256)));
