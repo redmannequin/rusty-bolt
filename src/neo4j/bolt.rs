@@ -19,7 +19,7 @@ pub struct BoltStream {
     packer: Packer,
     unpacker: Unpacker,
     request_markers: Vec<usize>,
-    responses: Vec<Box<Response>>,
+    responses: Vec<Box<BoltResponse>>,
 }
 
 impl BoltStream {
@@ -83,44 +83,24 @@ impl BoltStream {
             Value::Structure { signature, fields } => {
                 match signature {
                     0x70 => {
-                        let response = self.responses.remove(0);
-                        match fields[0] {  // TODO: handle not enough fields
-                            Value::Map(ref metadata) => {
-                                info!("S: SUCCESS {:?}", metadata);
-                                response.on_success(metadata)
-                            },
-                            _ => panic!("SUCCESS metadata is not a map"),
-                        }
+                        let mut response = self.responses.remove(0);
+                        info!("S: SUCCESS {:?}", fields[0]);
+                        response.on_summary(BoltSummary::Success(fields));
                     },
                     0x71 => {
                         let ref response = self.responses[0];
-                        match fields[0] {  // TODO: handle not enough fields
-                            Value::List(ref data) => {
-                                info!("S: RECORD {:?}", data);
-                                response.on_record(data)
-                            },
-                            _ => panic!("RECORD data is not a list"),
-                        }
+                        info!("S: RECORD {:?}", fields[0]);
+                        response.on_detail(BoltDetail::Record(fields));
                     },
                     0x7E => {
-                        let response = self.responses.remove(0);
-                        match fields[0] {  // TODO: handle not enough fields
-                            Value::Map(ref metadata) => {
-                                info!("S: IGNORED {:?}", metadata);
-                                response.on_ignored(metadata)
-                            },
-                            _ => panic!("IGNORED metadata is not a map"),
-                        }
+                        let mut response = self.responses.remove(0);
+                        info!("S: IGNORED {:?}", fields[0]);
+                        response.on_summary(BoltSummary::Ignored(fields));
                     },
                     0x7F => {
-                        let response = self.responses.remove(0);
-                        match fields[0] {  // TODO: handle not enough fields
-                            Value::Map(ref metadata) => {
-                                info!("S: FAILURE {:?}", metadata);
-                                response.on_failure(metadata)
-                            },
-                            _ => panic!("FAILURE metadata is not a map"),
-                        }
+                        let mut response = self.responses.remove(0);
+                        info!("S: FAILURE {:?}", fields[0]);
+                        response.on_summary(BoltSummary::Failure(fields));
                         self.pack_ack_failure(AckFailureResponse {});
                     },
                     _ => panic!("Unknown response message with signature {:02X}", signature),
@@ -146,7 +126,7 @@ impl BoltStream {
         }
     }
 
-    pub fn pack_init<R: 'static + Response>(&mut self, user: &str, password: &str, response: R) {
+    pub fn pack_init<R: 'static + BoltResponse>(&mut self, user: &str, password: &str, response: R) {
         info!("C: INIT {:?} {{\"scheme\": \"basic\", \"principal\": {:?}, \"credentials\": \"...\"}}", USER_AGENT, user);
         self.packer.pack_structure_header(2, 0x01);
         self.packer.pack_string(USER_AGENT);
@@ -161,21 +141,21 @@ impl BoltStream {
         self.responses.push(Box::new(response));
     }
 
-    pub fn pack_ack_failure<R: 'static + Response>(&mut self, response: R) {
+    pub fn pack_ack_failure<R: 'static + BoltResponse>(&mut self, response: R) {
         info!("C: ACK_FAILURE");
         self.packer.pack_structure_header(0, 0x0E);
         self.request_markers.push(self.packer.len());
         self.responses.push(Box::new(response));
     }
 
-    pub fn pack_reset<R: 'static + Response>(&mut self, response: R) {
+    pub fn pack_reset<R: 'static + BoltResponse>(&mut self, response: R) {
         info!("C: RESET");
         self.packer.pack_structure_header(0, 0x0F);
         self.request_markers.push(self.packer.len());
         self.responses.push(Box::new(response));
     }
 
-    pub fn pack_run<R: 'static + Response>(&mut self, statement: &str, parameters: HashMap<&str, Value>, response: R) {
+    pub fn pack_run<R: 'static + BoltResponse>(&mut self, statement: &str, parameters: HashMap<&str, Value>, response: R) {
         info!("C: RUN {:?} {:?}", statement, parameters);
         self.packer.pack_structure_header(2, 0x10);
         self.packer.pack_string(statement);
@@ -188,14 +168,14 @@ impl BoltStream {
         self.responses.push(Box::new(response));
     }
 
-    pub fn pack_discard_all<R: 'static + Response>(&mut self, response: R) {
+    pub fn pack_discard_all<R: 'static + BoltResponse>(&mut self, response: R) {
         info!("C: DISCARD_ALL");
         self.packer.pack_structure_header(0, 0x2F);
         self.request_markers.push(self.packer.len());
         self.responses.push(Box::new(response));
     }
 
-    pub fn pack_pull_all<R: 'static + Response>(&mut self, response: R) {
+    pub fn pack_pull_all<R: 'static + BoltResponse>(&mut self, response: R) {
         info!("C: PULL_ALL");
         self.packer.pack_structure_header(0, 0x3F);
         self.request_markers.push(self.packer.len());
@@ -204,28 +184,30 @@ impl BoltStream {
 
 }
 
-pub trait Response {
-    fn on_success(&self, metadata: &HashMap<String, Value>);
-    fn on_record(&self, data: &Vec<Value>);
-    fn on_ignored(&self, metadata: &HashMap<String, Value>);
-    fn on_failure(&self, metadata: &HashMap<String, Value>);
+pub enum BoltDetail {
+    Record(Vec<Value>),
+}
+
+pub enum BoltSummary {
+    Success(Vec<Value>),
+    Ignored(Vec<Value>),
+    Failure(Vec<Value>),
+}
+
+pub trait BoltResponse {
+    fn on_detail(&self, detail: BoltDetail);
+    fn on_summary(&mut self, summary: BoltSummary);
 }
 struct AckFailureResponse;
-impl Response for AckFailureResponse {
-    fn on_success(&self, _: &HashMap<String, Value>) {
-        //
-    }
-
-    fn on_record(&self, _: &Vec<Value>) {
+impl BoltResponse for AckFailureResponse {
+    fn on_detail(&self, _: BoltDetail) {
         panic!();
     }
-
-    fn on_ignored(&self, _: &HashMap<String, Value>) {
-        //
-    }
-
-    fn on_failure(&self, _: &HashMap<String, Value>) {
-        panic!();
+    fn on_summary(&mut self, summary: BoltSummary) {
+        match summary {
+            BoltSummary::Success(_) => (),
+            _ => panic!("Wrong type of thing!"),
+        }
     }
 }
 

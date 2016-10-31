@@ -1,7 +1,6 @@
-use std::vec::Vec;
 use std::collections::HashMap;
 
-use neo4j::bolt::{BoltStream, Response};
+use neo4j::bolt::{BoltStream, BoltDetail, BoltSummary, BoltResponse};
 use neo4j::packstream::Value;
 
 #[macro_export]
@@ -30,21 +29,26 @@ macro_rules! parameters(
 );
 
 struct DummyResponse;
-impl Response for DummyResponse {
-    fn on_success(&self, _: &HashMap<String, Value>) {
+impl BoltResponse for DummyResponse {
+    fn on_detail(&self, _: BoltDetail) {
         //
     }
 
-    fn on_record(&self, _: &Vec<Value>) {
+    fn on_summary(&mut self, _: BoltSummary) {
         //
     }
+}
 
-    fn on_ignored(&self, _: &HashMap<String, Value>) {
-        //
+struct InitResponse{
+    summary: BoltSummary,
+}
+impl BoltResponse for InitResponse {
+    fn on_detail(&self, _: BoltDetail) {
+        panic!("Unexpected detail")
     }
 
-    fn on_failure(&self, _: &HashMap<String, Value>) {
-        //
+    fn on_summary(&mut self, summary: BoltSummary) {
+        self.summary = summary;
     }
 }
 
@@ -98,7 +102,8 @@ struct DirectBoltConnection {
 impl DirectBoltConnection {
     pub fn new(address: &str, user: &str, password: &str) -> DirectBoltConnection {
         let mut connection = BoltStream::connect(address);
-        connection.pack_init(user, password, DummyResponse {});
+        let response = DummyResponse {};
+        connection.pack_init(user, password, response);
         connection.sync();
 
         DirectBoltConnection { connection: connection, }
