@@ -14,16 +14,16 @@ const RAW_BOLT_VERSIONS: [u8; 16] = [0x00, 0x00, 0x00, 0x01,
 const MAX_CHUNK_SIZE: usize = 0xFFFF;
 const USER_AGENT: &'static str = "rusty-bolt/0.1.0";
 
-pub struct BoltStream {
+pub struct BoltStream<'t> {
     stream: TcpStream,
     packer: Packer,
     unpacker: Unpacker,
     request_markers: Vec<usize>,
-    responses: Vec<Box<BoltResponse>>,
+    responses: Vec<Box<BoltResponseHandler + 't>>,
 }
 
-impl BoltStream {
-    pub fn connect<A: ToSocketAddrs>(address: A) -> BoltStream {
+impl<'t> BoltStream<'t> {
+    pub fn connect<A: ToSocketAddrs>(address: A) -> BoltStream<'t> {
         let mut stream = TcpStream::connect(address).unwrap();
 
         let _ = stream.write(&BOLT);
@@ -85,23 +85,23 @@ impl BoltStream {
                     0x70 => {
                         let mut response = self.responses.remove(0);
                         info!("S: SUCCESS {:?}", fields[0]);
-                        response.on_summary(BoltSummary::Success(fields));
+                        response.handle(BoltResponse::Summary(BoltSummary::Success(fields)));
                     },
                     0x71 => {
-                        let ref response = self.responses[0];
+                        let ref mut response = self.responses[0];
                         info!("S: RECORD {:?}", fields[0]);
-                        response.on_detail(BoltDetail::Record(fields));
+                        response.handle(BoltResponse::Detail(BoltDetail::Record(fields)));
                     },
                     0x7E => {
                         let mut response = self.responses.remove(0);
                         info!("S: IGNORED {:?}", fields[0]);
-                        response.on_summary(BoltSummary::Ignored(fields));
+                        response.handle(BoltResponse::Summary(BoltSummary::Ignored(fields)));
                     },
                     0x7F => {
                         let mut response = self.responses.remove(0);
                         info!("S: FAILURE {:?}", fields[0]);
-                        response.on_summary(BoltSummary::Failure(fields));
-                        self.pack_ack_failure(AckFailureResponse {});
+                        response.handle(BoltResponse::Summary(BoltSummary::Failure(fields)));
+                        self.pack_ack_failure(AckFailureResponseHandler {});
                     },
                     _ => panic!("Unknown response message with signature {:02X}", signature),
                 }
@@ -126,7 +126,7 @@ impl BoltStream {
         }
     }
 
-    pub fn pack_init<R: 'static + BoltResponse>(&mut self, user: &str, password: &str, response: R) {
+    pub fn pack_init<R: 't + BoltResponseHandler>(&mut self, user: &str, password: &str, response: R) {
         info!("C: INIT {:?} {{\"scheme\": \"basic\", \"principal\": {:?}, \"credentials\": \"...\"}}", USER_AGENT, user);
         self.packer.pack_structure_header(2, 0x01);
         self.packer.pack_string(USER_AGENT);
@@ -141,21 +141,21 @@ impl BoltStream {
         self.responses.push(Box::new(response));
     }
 
-    pub fn pack_ack_failure<R: 'static + BoltResponse>(&mut self, response: R) {
+    pub fn pack_ack_failure<R: 't + BoltResponseHandler>(&mut self, response: R) {
         info!("C: ACK_FAILURE");
         self.packer.pack_structure_header(0, 0x0E);
         self.request_markers.push(self.packer.len());
         self.responses.push(Box::new(response));
     }
 
-    pub fn pack_reset<R: 'static + BoltResponse>(&mut self, response: R) {
+    pub fn pack_reset<R: 't + BoltResponseHandler>(&mut self, response: R) {
         info!("C: RESET");
         self.packer.pack_structure_header(0, 0x0F);
         self.request_markers.push(self.packer.len());
         self.responses.push(Box::new(response));
     }
 
-    pub fn pack_run<R: 'static + BoltResponse>(&mut self, statement: &str, parameters: HashMap<&str, Value>, response: R) {
+    pub fn pack_run<R: 't + BoltResponseHandler>(&mut self, statement: &str, parameters: HashMap<&str, Value>, response: R) {
         info!("C: RUN {:?} {:?}", statement, parameters);
         self.packer.pack_structure_header(2, 0x10);
         self.packer.pack_string(statement);
@@ -168,14 +168,14 @@ impl BoltStream {
         self.responses.push(Box::new(response));
     }
 
-    pub fn pack_discard_all<R: 'static + BoltResponse>(&mut self, response: R) {
+    pub fn pack_discard_all<R: 't + BoltResponseHandler>(&mut self, response: R) {
         info!("C: DISCARD_ALL");
         self.packer.pack_structure_header(0, 0x2F);
         self.request_markers.push(self.packer.len());
         self.responses.push(Box::new(response));
     }
 
-    pub fn pack_pull_all<R: 'static + BoltResponse>(&mut self, response: R) {
+    pub fn pack_pull_all<R: 't + BoltResponseHandler>(&mut self, response: R) {
         info!("C: PULL_ALL");
         self.packer.pack_structure_header(0, 0x3F);
         self.request_markers.push(self.packer.len());
@@ -194,19 +194,25 @@ pub enum BoltSummary {
     Failure(Vec<Value>),
 }
 
-pub trait BoltResponse {
-    fn on_detail(&self, detail: BoltDetail);
-    fn on_summary(&mut self, summary: BoltSummary);
+pub enum BoltResponse {
+    Detail(BoltDetail),
+    Summary(BoltSummary),
 }
-struct AckFailureResponse;
-impl BoltResponse for AckFailureResponse {
-    fn on_detail(&self, _: BoltDetail) {
-        panic!();
-    }
-    fn on_summary(&mut self, summary: BoltSummary) {
-        match summary {
-            BoltSummary::Success(_) => (),
-            _ => panic!("Wrong type of thing!"),
+
+pub trait BoltResponseHandler {
+    fn handle(&mut self, response: BoltResponse);
+}
+struct AckFailureResponseHandler;
+impl BoltResponseHandler for AckFailureResponseHandler {
+    fn handle(&mut self, response: BoltResponse) {
+        match response {
+            BoltResponse::Summary(summary) => {
+                match summary {
+                    BoltSummary::Success(_) => (),
+                    _ => panic!("Wrong type of thing!"),
+                }
+            }
+            _ => panic!("oops")
         }
     }
 }
