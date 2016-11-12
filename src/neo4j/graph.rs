@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use neo4j::bolt::{BoltStream, BoltSummary, BoltResponse, BoltResponseHandler};
+use neo4j::bolt::{BoltStream};
 use neo4j::packstream::Value;
 
 #[macro_export]
@@ -27,50 +27,50 @@ macro_rules! parameters(
         }
     };
 );
-
-struct DummyResponseHandler;
-impl BoltResponseHandler for DummyResponseHandler {
-    fn handle(&mut self, _: BoltResponse) {
-        //
-    }
-}
-
-struct InitResponseHandler {
-    summary: Option<BoltSummary>,
-}
-impl InitResponseHandler {
-    pub fn server(&self) -> Option<String> {
-        match self.summary {
-            Some(ref summary) => {
-                match summary {
-                    &BoltSummary::Success(ref fields) => {
-                        match fields[0] {
-//                            Value::Map(map) => {
-//                                match map.get("server") {
-//                                    Value::String(s) => Some(s),
-//                                    _ => panic!(),
-//                                }
-//                            },
-                            _ => panic!(),
-                        }
-                    },
-                    _ => panic!(),
-                }
-            },
-            None => None,
-        }
-    }
-}
-impl BoltResponseHandler for InitResponseHandler {
-    fn handle(&mut self, response: BoltResponse) {
-        match response {
-            BoltResponse::Summary(summary) => {
-                self.summary = Some(summary);
-            }
-            _ => panic!("Wrong type of thing!!")
-        }
-    }
-}
+//
+//struct DummyResponseHandler;
+//impl BoltResponseHandler for DummyResponseHandler {
+//    fn handle(&mut self, _: BoltResponse) {
+//        //
+//    }
+//}
+//
+//struct InitResponseHandler {
+//    summary: Option<BoltSummary>,
+//}
+//impl InitResponseHandler {
+//    pub fn server(&self) -> Option<String> {
+//        match self.summary {
+//            Some(ref summary) => {
+//                match summary {
+//                    &BoltSummary::Success(ref fields) => {
+//                        match fields[0] {
+////                            Value::Map(map) => {
+////                                match map.get("server") {
+////                                    Value::String(s) => Some(s),
+////                                    _ => panic!(),
+////                                }
+////                            },
+//                            _ => panic!(),
+//                        }
+//                    },
+//                    _ => panic!(),
+//                }
+//            },
+//            None => None,
+//        }
+//    }
+//}
+//impl BoltResponseHandler for InitResponseHandler {
+//    fn handle(&mut self, response: BoltResponse) {
+//        match response {
+//            BoltResponse::Summary(summary) => {
+//                self.summary = Some(summary);
+//            }
+//            _ => panic!("Wrong type of thing!!")
+//        }
+//    }
+//}
 
 
 // GRAPH //
@@ -116,13 +116,13 @@ pub trait GraphConnection {
     fn run(&mut self, statement: &str, parameters: HashMap<&str, Value>);
     fn sync(&mut self);
 }
-struct DirectBoltConnection<'t> {
-    connection: BoltStream<'t>,
+struct DirectBoltConnection {
+    connection: BoltStream,
 }
-impl<'t> DirectBoltConnection<'t> {
-    pub fn new(address: &str, user: &str, password: &str) -> DirectBoltConnection<'t> {
+impl DirectBoltConnection {
+    pub fn new(address: &str, user: &str, password: &str) -> DirectBoltConnection {
         let mut connection = BoltStream::connect(address);
-        connection.pack_init(user, password, InitResponseHandler { summary: None });
+        connection.pack_init(user, password);
         connection.sync();
 
         //println!("Connected to server {}", response.server().unwrap());
@@ -130,33 +130,33 @@ impl<'t> DirectBoltConnection<'t> {
         DirectBoltConnection { connection: connection }
     }
 }
-impl<'t> GraphConnection for DirectBoltConnection<'t> {
+impl GraphConnection for DirectBoltConnection {
 
     fn begin(&mut self) {
-        self.connection.pack_run("BEGIN", parameters!(), DummyResponseHandler {});
-        self.connection.pack_discard_all(DummyResponseHandler {});
+        self.connection.pack_run("BEGIN", parameters!());
+        self.connection.pack_discard_all();
     }
 
     fn commit(&mut self) {
-        self.connection.pack_run("COMMIT", parameters!(), DummyResponseHandler {});
-        self.connection.pack_discard_all(DummyResponseHandler {});
+        self.connection.pack_run("COMMIT", parameters!());
+        self.connection.pack_discard_all();
         self.connection.sync();
     }
 
     fn reset(&mut self) {
-        self.connection.pack_reset(DummyResponseHandler {});
+        self.connection.pack_reset();
         self.connection.sync();
     }
 
     fn rollback(&mut self) {
-        self.connection.pack_run("ROLLBACK", parameters!(), DummyResponseHandler {});
-        self.connection.pack_discard_all(DummyResponseHandler {});
+        self.connection.pack_run("ROLLBACK", parameters!());
+        self.connection.pack_discard_all();
         self.connection.sync();
     }
 
     fn run(&mut self, statement: &str, parameters: HashMap<&str, Value>) {
-        self.connection.pack_run(statement, parameters, DummyResponseHandler {});
-        self.connection.pack_pull_all(DummyResponseHandler {});
+        self.connection.pack_run(statement, parameters);
+        self.connection.pack_pull_all();
     }
 
     fn sync(&mut self) {
