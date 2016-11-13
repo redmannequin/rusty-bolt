@@ -1,5 +1,5 @@
 use std::vec::Vec;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::prelude::*;
 use std::net::{TcpStream, ToSocketAddrs};
 
@@ -18,8 +18,8 @@ pub struct BoltStream {
     stream: TcpStream,
     packer: Packer,
     unpacker: Unpacker,
-    request_markers: Vec<usize>,
-    responses: Vec<BoltResponse>,
+    request_markers: VecDeque<usize>,
+    responses: VecDeque<BoltResponse>,
 }
 
 impl BoltStream {
@@ -42,7 +42,7 @@ impl BoltStream {
         }
 
         BoltStream { stream: stream, packer: Packer::new(), unpacker: Unpacker::new(),
-                     request_markers: vec!(), responses: vec!() }
+                     request_markers: VecDeque::new(), responses: VecDeque::new() }
     }
 
     /// Send all queued outgoing messages
@@ -83,23 +83,23 @@ impl BoltStream {
             Value::Structure { signature, fields } => {
                 match signature {
                     0x70 => {
-                        let mut response = self.responses.remove(0);
                         info!("S: SUCCESS {:?}", fields[0]);
+                        let mut response = self.responses.pop_front().unwrap();
                         response.summary = Some(BoltSummary::Success(fields));
                     },
                     0x71 => {
-                        let ref mut response = self.responses[0];
                         info!("S: RECORD {:?}", fields[0]);
+                        let ref mut response = self.responses.front_mut().unwrap();
                         response.detail.push(BoltDetail::Record(fields));
                     },
                     0x7E => {
-                        let mut response = self.responses.remove(0);
                         info!("S: IGNORED {:?}", fields[0]);
+                        let mut response = self.responses.pop_front().unwrap();
                         response.summary = Some(BoltSummary::Ignored(fields));
                     },
                     0x7F => {
-                        let mut response = self.responses.remove(0);
                         info!("S: FAILURE {:?}", fields[0]);
+                        let mut response = self.responses.pop_front().unwrap();
                         response.summary = Some(BoltSummary::Failure(fields));
                         self.pack_ack_failure();
                     },
@@ -137,25 +137,25 @@ impl BoltStream {
         self.packer.pack_string(user);
         self.packer.pack_string("credentials");
         self.packer.pack_string(password);
-        self.request_markers.push(self.packer.len());
-        self.responses.push(BoltResponse::new());
-        self.responses.last().unwrap()
+        self.request_markers.push_back(self.packer.len());
+        self.responses.push_back(BoltResponse::new());
+        self.responses.back().unwrap()
     }
 
     pub fn pack_ack_failure(&mut self) -> &BoltResponse {
         info!("C: ACK_FAILURE");
         self.packer.pack_structure_header(0, 0x0E);
-        self.request_markers.push(self.packer.len());
-        self.responses.push(BoltResponse::new());
-        self.responses.last().unwrap()
+        self.request_markers.push_back(self.packer.len());
+        self.responses.push_back(BoltResponse::new());
+        self.responses.back().unwrap()
     }
 
     pub fn pack_reset(&mut self) -> &BoltResponse {
         info!("C: RESET");
         self.packer.pack_structure_header(0, 0x0F);
-        self.request_markers.push(self.packer.len());
-        self.responses.push(BoltResponse::new());
-        self.responses.last().unwrap()
+        self.request_markers.push_back(self.packer.len());
+        self.responses.push_back(BoltResponse::new());
+        self.responses.back().unwrap()
     }
 
     pub fn pack_run(&mut self, statement: &str, parameters: HashMap<&str, Value>) -> &BoltResponse {
@@ -167,25 +167,25 @@ impl BoltStream {
             self.packer.pack_string(name);
             self.packer.pack(value);
         }
-        self.request_markers.push(self.packer.len());
-        self.responses.push(BoltResponse::new());
-        self.responses.last().unwrap()
+        self.request_markers.push_back(self.packer.len());
+        self.responses.push_back(BoltResponse::new());
+        self.responses.back().unwrap()
     }
 
     pub fn pack_discard_all(&mut self) -> &BoltResponse {
         info!("C: DISCARD_ALL");
         self.packer.pack_structure_header(0, 0x2F);
-        self.request_markers.push(self.packer.len());
-        self.responses.push(BoltResponse::new());
-        self.responses.last().unwrap()
+        self.request_markers.push_back(self.packer.len());
+        self.responses.push_back(BoltResponse::new());
+        self.responses.back().unwrap()
     }
 
     pub fn pack_pull_all(&mut self) -> &BoltResponse {
         info!("C: PULL_ALL");
         self.packer.pack_structure_header(0, 0x3F);
-        self.request_markers.push(self.packer.len());
-        self.responses.push(BoltResponse::new());
-        self.responses.last().unwrap()
+        self.request_markers.push_back(self.packer.len());
+        self.responses.push_back(BoltResponse::new());
+        self.responses.back().unwrap()
     }
 
 }
