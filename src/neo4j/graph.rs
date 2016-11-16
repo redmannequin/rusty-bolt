@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use neo4j::bolt::{BoltStream};
+use neo4j::bolt::BoltStream;
 use neo4j::packstream::Value;
 
 #[macro_export]
@@ -27,88 +27,11 @@ macro_rules! parameters(
         }
     };
 );
-//
-//struct DummyResponseHandler;
-//impl BoltResponseHandler for DummyResponseHandler {
-//    fn handle(&mut self, _: BoltResponse) {
-//        //
-//    }
-//}
-//
-//struct InitResponseHandler {
-//    summary: Option<BoltSummary>,
-//}
-//impl InitResponseHandler {
-//    pub fn server(&self) -> Option<String> {
-//        match self.summary {
-//            Some(ref summary) => {
-//                match summary {
-//                    &BoltSummary::Success(ref fields) => {
-//                        match fields[0] {
-////                            Value::Map(map) => {
-////                                match map.get("server") {
-////                                    Value::String(s) => Some(s),
-////                                    _ => panic!(),
-////                                }
-////                            },
-//                            _ => panic!(),
-//                        }
-//                    },
-//                    _ => panic!(),
-//                }
-//            },
-//            None => None,
-//        }
-//    }
-//}
-//impl BoltResponseHandler for InitResponseHandler {
-//    fn handle(&mut self, response: BoltResponse) {
-//        match response {
-//            BoltResponse::Summary(summary) => {
-//                self.summary = Some(summary);
-//            }
-//            _ => panic!("Wrong type of thing!!")
-//        }
-//    }
-//}
 
 
 // GRAPH //
 
-pub struct Graph {}
-impl Graph {
-    pub fn new(address: &str, user: &str, password: &str) -> Box<GraphConnector> {
-        Box::new(DirectBoltConnector::new(address, user, password))
-    }
-}
-
-
-// GRAPH CONNECTOR //
-
-pub trait GraphConnector {
-    fn connect(&self) -> Box<GraphConnection>;
-}
-struct DirectBoltConnector {
-    address: String,
-    user: String,
-    password: String,
-}
-impl DirectBoltConnector {
-    pub fn new(address: &str, user: &str, password: &str) -> DirectBoltConnector {
-        DirectBoltConnector { address: String::from(address),
-                       user: String::from(user), password: String::from(password) }
-    }
-}
-impl GraphConnector for DirectBoltConnector {
-    fn connect(&self) -> Box<GraphConnection> {
-        Box::new(DirectBoltConnection::new(&self.address[..], &self.user[..], &self.password[..]))
-    }
-}
-
-
-// GRAPH CONNECTION //
-
-pub trait GraphConnection {
+pub trait Graph {
     fn server_version(&self) -> &str;
     fn begin(&mut self);
     fn commit(&mut self);
@@ -117,6 +40,12 @@ pub trait GraphConnection {
     fn run(&mut self, statement: &str, parameters: HashMap<&str, Value>);
     fn sync(&mut self);
 }
+impl Graph {
+    pub fn connect(address: &str, user: &str, password: &str) -> Box<Graph> {
+        Box::new(DirectBoltConnection::new(&address[..], &user[..], &password[..]))
+    }
+}
+
 struct DirectBoltConnection {
     connection: BoltStream,
     server_version: Option<String>,
@@ -144,7 +73,7 @@ impl DirectBoltConnection {
         }
     }
 }
-impl GraphConnection for DirectBoltConnection {
+impl Graph for DirectBoltConnection {
 
     fn server_version(&self) -> &str {
         match self.server_version {
