@@ -109,6 +109,7 @@ impl GraphConnector for DirectBoltConnector {
 // GRAPH CONNECTION //
 
 pub trait GraphConnection {
+    fn server_version(&self) -> &str;
     fn begin(&mut self);
     fn commit(&mut self);
     fn reset(&mut self);
@@ -118,19 +119,39 @@ pub trait GraphConnection {
 }
 struct DirectBoltConnection {
     connection: BoltStream,
+    server_version: Option<String>,
 }
 impl DirectBoltConnection {
     pub fn new(address: &str, user: &str, password: &str) -> DirectBoltConnection {
         let mut connection = BoltStream::connect(address);
-        connection.pack_init(user, password);
+        let r = connection.pack_init(user, password);
         connection.sync();
 
-        //println!("Connected to server {}", response.server().unwrap());
+        let server_version = match connection.metadata(r) {
+            Some(ref metadata) => match metadata.get("server") {
+                Some(ref server) => match *server {
+                    &Value::String(ref string) => Some(string.clone()),
+                    _ => None,
+                },
+                _ => None,
+            },
+            _ => None,
+        };
 
-        DirectBoltConnection { connection: connection }
+        DirectBoltConnection {
+            connection: connection,
+            server_version: server_version,
+        }
     }
 }
 impl GraphConnection for DirectBoltConnection {
+
+    fn server_version(&self) -> &str {
+        match self.server_version {
+            Some(ref version) => &version[..],
+            None => "",
+        }
+    }
 
     fn begin(&mut self) {
         self.connection.pack_run("BEGIN", parameters!());

@@ -1,3 +1,4 @@
+use std::fmt;
 use std::vec::Vec;
 use std::collections::{HashMap, VecDeque};
 use std::io::prelude::*;
@@ -19,6 +20,8 @@ pub struct BoltStream {
     packer: Packer,
     unpacker: Unpacker,
     request_markers: VecDeque<usize>,
+    response_offset: usize,
+    response_write_index: usize,
     responses: VecDeque<BoltResponse>,
 }
 
@@ -42,7 +45,7 @@ impl BoltStream {
         }
 
         BoltStream { stream: stream, packer: Packer::new(), unpacker: Unpacker::new(),
-                     request_markers: VecDeque::new(), responses: VecDeque::new() }
+                     request_markers: VecDeque::new(), response_offset: 0, response_write_index: 0, responses: VecDeque::new() }
     }
 
     /// Send all queued outgoing messages
@@ -84,23 +87,28 @@ impl BoltStream {
                 match signature {
                     0x70 => {
                         info!("S: SUCCESS {:?}", fields[0]);
-                        let mut response = self.responses.pop_front().unwrap();
+                        let mut response = self.responses.get_mut(self.response_write_index).unwrap();
                         response.summary = Some(BoltSummary::Success(fields));
+                        self.response_write_index += 1;
                     },
                     0x71 => {
                         info!("S: RECORD {:?}", fields[0]);
-                        let ref mut response = self.responses.front_mut().unwrap();
+                        let mut response = self.responses.get_mut(self.response_write_index).unwrap();
                         response.detail.push(BoltDetail::Record(fields));
                     },
                     0x7E => {
                         info!("S: IGNORED {:?}", fields[0]);
-                        let mut response = self.responses.pop_front().unwrap();
+                        let mut response = self.responses.get_mut(self.response_write_index).unwrap();
                         response.summary = Some(BoltSummary::Ignored(fields));
+                        self.response_write_index += 1;
                     },
                     0x7F => {
                         info!("S: FAILURE {:?}", fields[0]);
-                        let mut response = self.responses.pop_front().unwrap();
-                        response.summary = Some(BoltSummary::Failure(fields));
+                        {
+                            let mut response = self.responses.get_mut(self.response_write_index).unwrap();
+                            response.summary = Some(BoltSummary::Failure(fields));
+                        }
+                        self.response_write_index += 1;
                         self.pack_ack_failure();
                     },
                     _ => panic!("Unknown response message with signature {:02X}", signature),
@@ -121,12 +129,12 @@ impl BoltStream {
 
     pub fn sync(&mut self) {
         self.send();
-        while !self.responses.is_empty() {
+        while self.response_write_index < self.responses.len() {
             self.fetch_response();
         }
     }
 
-    pub fn pack_init(&mut self, user: &str, password: &str) -> &BoltResponse {
+    pub fn pack_init(&mut self, user: &str, password: &str) -> usize {
         info!("C: INIT {:?} {{\"scheme\": \"basic\", \"principal\": {:?}, \"credentials\": \"...\"}}", USER_AGENT, user);
         self.packer.pack_structure_header(2, 0x01);
         self.packer.pack_string(USER_AGENT);
@@ -139,26 +147,26 @@ impl BoltStream {
         self.packer.pack_string(password);
         self.request_markers.push_back(self.packer.len());
         self.responses.push_back(BoltResponse::new());
-        self.responses.back().unwrap()
+        self.response_offset + self.responses.len() - 1
     }
 
-    pub fn pack_ack_failure(&mut self) -> &BoltResponse {
+    pub fn pack_ack_failure(&mut self) -> usize {
         info!("C: ACK_FAILURE");
         self.packer.pack_structure_header(0, 0x0E);
         self.request_markers.push_back(self.packer.len());
         self.responses.push_back(BoltResponse::new());
-        self.responses.back().unwrap()
+        self.response_offset + self.responses.len() - 1
     }
 
-    pub fn pack_reset(&mut self) -> &BoltResponse {
+    pub fn pack_reset(&mut self) -> usize {
         info!("C: RESET");
         self.packer.pack_structure_header(0, 0x0F);
         self.request_markers.push_back(self.packer.len());
         self.responses.push_back(BoltResponse::new());
-        self.responses.back().unwrap()
+        self.response_offset + self.responses.len() - 1
     }
 
-    pub fn pack_run(&mut self, statement: &str, parameters: HashMap<&str, Value>) -> &BoltResponse {
+    pub fn pack_run(&mut self, statement: &str, parameters: HashMap<&str, Value>) -> usize {
         info!("C: RUN {:?} {:?}", statement, parameters);
         self.packer.pack_structure_header(2, 0x10);
         self.packer.pack_string(statement);
@@ -169,23 +177,64 @@ impl BoltStream {
         }
         self.request_markers.push_back(self.packer.len());
         self.responses.push_back(BoltResponse::new());
-        self.responses.back().unwrap()
+        self.response_offset + self.responses.len() - 1
     }
 
-    pub fn pack_discard_all(&mut self) -> &BoltResponse {
+    pub fn pack_discard_all(&mut self) -> usize {
         info!("C: DISCARD_ALL");
         self.packer.pack_structure_header(0, 0x2F);
         self.request_markers.push_back(self.packer.len());
         self.responses.push_back(BoltResponse::new());
-        self.responses.back().unwrap()
+        self.response_offset + self.responses.len() - 1
     }
 
-    pub fn pack_pull_all(&mut self) -> &BoltResponse {
+    pub fn pack_pull_all(&mut self) -> usize {
         info!("C: PULL_ALL");
         self.packer.pack_structure_header(0, 0x3F);
         self.request_markers.push_back(self.packer.len());
         self.responses.push_back(BoltResponse::new());
-        self.responses.back().unwrap()
+        self.response_offset + self.responses.len() - 1
+    }
+
+    pub fn response(&self, index: usize) -> Option<&BoltResponse> {
+        match self.responses.get(index - self.response_offset) {
+            Some(response) => Some(response),
+            None => None,
+        }
+    }
+
+    pub fn summary(&self, index: usize) -> Option<&BoltSummary> {
+        match self.response(index) {
+            Some(ref response) => {
+                match response.summary {
+                    Some(ref summary) => Some(summary),
+                    _ => None,
+                }
+            },
+            _ => None,
+        }
+    }
+
+    pub fn metadata(&self, index: usize) -> Option<&HashMap<String, Value>> {
+        match self.summary(index) {
+            Some(summary) => {
+                match summary {
+                    &BoltSummary::Success(ref fields) => {
+                        match fields.get(0) {
+                            Some(ref field) => {
+                                match *field {
+                                    &Value::Map(ref metadata) => Some(metadata),
+                                    _ => None,
+                                }
+                            },
+                            _ => None,
+                        }
+                    },
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
     }
 
 }
@@ -209,6 +258,22 @@ impl BoltResponse {
         BoltResponse { detail: vec!(), summary: None }
     }
 }
+
+impl fmt::Debug for BoltResponse {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.summary {
+            Some(ref summary) => {
+                match *summary {
+                    BoltSummary::Success(ref metadata) => write!(f, "SUCCESS {:?}", metadata),
+                    BoltSummary::Ignored(ref metadata) => write!(f, "IGNORED {:?}", metadata),
+                    BoltSummary::Failure(ref metadata) => write!(f, "FAILURE {:?}", metadata),
+                }
+            },
+            None => write!(f, "None"),
+        }
+    }
+}
+
 //
 //pub trait BoltResponseHandler {
 //    fn handle(&mut self, response: BoltResponse);

@@ -30,6 +30,7 @@ fn main() {
 
     let graph = Graph::new("127.0.0.1:7687", "neo4j", "password");
     let mut connection = graph.connect();
+    println!("Connected to server {}", connection.server_version());
     connection.begin();
     connection.run("CREATE (a:Person {name:$name}) RETURN a", parameters!("name" => "Alice"));
     connection.commit();
