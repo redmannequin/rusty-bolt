@@ -196,20 +196,33 @@ impl BoltStream {
         self.response_offset + self.responses.len() - 1
     }
 
+    pub fn done(&mut self, index: usize) {
+        // TODO - mark not in use and remove all from front not in use
+        match self.responses.get_mut(index - self.response_offset) {
+            Some(mut response) => {
+                if !response.done {
+                    response.done = true;
+                }
+            },
+            _ => (),
+        }
+    }
+
     pub fn response(&self, index: usize) -> Option<&BoltResponse> {
         match self.responses.get(index - self.response_offset) {
-            Some(response) => Some(response),
-            None => None,
+            Some(ref response) => match response.done {
+                true => None,
+                false => Some(response),
+            },
+            _ => None,
         }
     }
 
     pub fn summary(&self, index: usize) -> Option<&BoltSummary> {
         match self.response(index) {
-            Some(ref response) => {
-                match response.summary {
-                    Some(ref summary) => Some(summary),
-                    _ => None,
-                }
+            Some(ref response) => match response.summary {
+                Some(ref summary) => Some(summary),
+                _ => None,
             },
             _ => None,
         }
@@ -217,22 +230,16 @@ impl BoltStream {
 
     pub fn metadata(&self, index: usize) -> Option<&HashMap<String, Value>> {
         match self.summary(index) {
-            Some(summary) => {
-                match summary {
-                    &BoltSummary::Success(ref fields) => {
-                        match fields.get(0) {
-                            Some(ref field) => {
-                                match *field {
-                                    &Value::Map(ref metadata) => Some(metadata),
-                                    _ => None,
-                                }
-                            },
-                            _ => None,
-                        }
+            Some(summary) => match summary {
+                &BoltSummary::Success(ref fields) => match fields.get(0) {
+                    Some(ref field) => match *field {
+                        &Value::Map(ref metadata) => Some(metadata),
+                        _ => None,
                     },
                     _ => None,
-                }
-            }
+                },
+                _ => None,
+            },
             _ => None,
         }
     }
@@ -250,12 +257,13 @@ pub enum BoltSummary {
 }
 
 pub struct BoltResponse {
+    done: bool,
     detail: Vec<BoltDetail>,
     summary: Option<BoltSummary>,
 }
 impl BoltResponse {
     pub fn new() -> BoltResponse {
-        BoltResponse { detail: vec!(), summary: None }
+        BoltResponse { done: false, detail: vec!(), summary: None }
     }
 }
 
@@ -273,25 +281,6 @@ impl fmt::Debug for BoltResponse {
         }
     }
 }
-
-//
-//pub trait BoltResponseHandler {
-//    fn handle(&mut self, response: BoltResponse);
-//}
-//struct AckFailureResponseHandler;
-//impl BoltResponseHandler for AckFailureResponseHandler {
-//    fn handle(&mut self, response: BoltResponse) {
-//        match response {
-//            BoltResponse::Summary(summary) => {
-//                match summary {
-//                    BoltSummary::Success(_) => (),
-//                    _ => panic!("Wrong type of thing!"),
-//                }
-//            }
-//            _ => panic!("oops")
-//        }
-//    }
-//}
 
 #[cfg(test)]
 mod test {

@@ -53,9 +53,9 @@ struct DirectBoltConnection {
 impl DirectBoltConnection {
     pub fn new(address: &str, user: &str, password: &str) -> DirectBoltConnection {
         let mut connection = BoltStream::connect(address);
+
         let r = connection.pack_init(user, password);
         connection.sync();
-
         let server_version = match connection.metadata(r) {
             Some(ref metadata) => match metadata.get("server") {
                 Some(ref server) => match *server {
@@ -66,6 +66,7 @@ impl DirectBoltConnection {
             },
             _ => None,
         };
+        connection.done(r);
 
         DirectBoltConnection {
             connection: connection,
