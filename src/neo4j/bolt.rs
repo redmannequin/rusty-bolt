@@ -198,16 +198,24 @@ impl BoltStream {
     }
 
     pub fn done(&mut self, index: usize) {
+        let mut prune = false;
         match self.responses.get_mut(index - self.responses_done) {
             Some(mut response) => {
                 if !response.done {
                     response.done = true;
+                    prune = true;
                 }
             },
             _ => (),
         }
+        if prune {
+            self.prune();
+        }
+    }
+
+    fn prune(&mut self) {
         let mut pruning = true;
-        while pruning {
+        while pruning && self.current_response > 0 {
             match self.responses.front() {
                 Some(response) => {
                     if !response.done {

@@ -34,7 +34,7 @@ macro_rules! parameters(
 pub trait Graph {
     fn server_version(&self) -> &str;
     fn begin(&mut self);
-    fn commit(&mut self);
+    fn commit(&mut self) -> TransactionResult;
     fn reset(&mut self);
     fn rollback(&mut self);
     fn run(&mut self, statement: &str, parameters: HashMap<&str, Value>);
@@ -54,9 +54,9 @@ impl DirectBoltConnection {
     pub fn new(address: &str, user: &str, password: &str) -> DirectBoltConnection {
         let mut connection = BoltStream::connect(address);
 
-        let r = connection.pack_init(user, password);
+        let init = connection.pack_init(user, password);
         connection.sync();
-        let server_version = match connection.metadata(r) {
+        let server_version = match connection.metadata(init) {
             Some(ref metadata) => match metadata.get("server") {
                 Some(ref server) => match *server {
                     &Value::String(ref string) => Some(string.clone()),
@@ -66,7 +66,7 @@ impl DirectBoltConnection {
             },
             _ => None,
         };
-        connection.done(r);
+        connection.done(init);
 
         DirectBoltConnection {
             connection: connection,
@@ -84,25 +84,43 @@ impl Graph for DirectBoltConnection {
     }
 
     fn begin(&mut self) {
-        self.connection.pack_run("BEGIN", parameters!());
-        self.connection.pack_discard_all();
+        let header = self.connection.pack_run("BEGIN", parameters!());
+        let footer = self.connection.pack_discard_all();
+        self.connection.done(header);
+        self.connection.done(footer);
     }
 
-    fn commit(&mut self) {
-        self.connection.pack_run("COMMIT", parameters!());
-        self.connection.pack_discard_all();
+    fn commit(&mut self) -> TransactionResult {
+        let header = self.connection.pack_run("COMMIT", parameters!());
+        let footer = self.connection.pack_discard_all();
         self.connection.sync();
+        let bookmark: Option<String> = match self.connection.metadata(footer) {
+            Some(metadata) => match metadata.get("bookmark") {
+                Some(value) => match value {
+                    &Value::String(ref bookmark) => Some(bookmark.clone()),
+                    _ => None,
+                },
+                _ => None,
+            },
+            _ => None,
+        };
+        self.connection.done(header);
+        self.connection.done(footer);
+        TransactionResult { bookmark: bookmark }
     }
 
     fn reset(&mut self) {
-        self.connection.pack_reset();
+        let reset = self.connection.pack_reset();
         self.connection.sync();
+        self.connection.done(reset);
     }
 
     fn rollback(&mut self) {
-        self.connection.pack_run("ROLLBACK", parameters!());
-        self.connection.pack_discard_all();
+        let header = self.connection.pack_run("ROLLBACK", parameters!());
+        let footer = self.connection.pack_discard_all();
         self.connection.sync();
+        self.connection.done(header);
+        self.connection.done(footer);
     }
 
     fn run(&mut self, statement: &str, parameters: HashMap<&str, Value>) {
@@ -112,6 +130,18 @@ impl Graph for DirectBoltConnection {
 
     fn sync(&mut self) {
         self.connection.sync();
+    }
+}
+
+pub struct TransactionResult {
+    bookmark: Option<String>,
+}
+impl TransactionResult {
+    pub fn bookmark(&self) -> Option<&str> {
+        match self.bookmark {
+            Some(ref bookmark) => Some(&bookmark[..]),
+            _ => None,
+        }
     }
 }
 
