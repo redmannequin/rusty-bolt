@@ -32,8 +32,8 @@ fn main() {
     println!("Connected to server {}", graph.server_version());
     graph.begin();
     graph.run("CREATE (a:Person {name:$name}) RETURN a", parameters!("name" => "Alice"));
-    let tx_result = graph.commit();
-    println!("Bookmark {:?}", tx_result.bookmark());
+    let commit_result = graph.commit();
+    println!("Bookmark {:?}", commit_result.bookmark());
     //graph.sync();
 
 

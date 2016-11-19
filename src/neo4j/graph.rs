@@ -34,7 +34,7 @@ macro_rules! parameters(
 pub trait Graph {
     fn server_version(&self) -> &str;
     fn begin(&mut self);
-    fn commit(&mut self) -> TransactionResult;
+    fn commit(&mut self) -> CommitResult;
     fn reset(&mut self);
     fn rollback(&mut self);
     fn run(&mut self, statement: &str, parameters: HashMap<&str, Value>);
@@ -90,7 +90,7 @@ impl Graph for DirectBoltConnection {
         self.connection.done(footer);
     }
 
-    fn commit(&mut self) -> TransactionResult {
+    fn commit(&mut self) -> CommitResult {
         let header = self.connection.pack_run("COMMIT", parameters!());
         let footer = self.connection.pack_discard_all();
         self.connection.sync();
@@ -106,7 +106,7 @@ impl Graph for DirectBoltConnection {
         };
         self.connection.done(header);
         self.connection.done(footer);
-        TransactionResult { bookmark: bookmark }
+        CommitResult { bookmark: bookmark }
     }
 
     fn reset(&mut self) {
@@ -133,10 +133,10 @@ impl Graph for DirectBoltConnection {
     }
 }
 
-pub struct TransactionResult {
+pub struct CommitResult {
     bookmark: Option<String>,
 }
-impl TransactionResult {
+impl CommitResult {
     pub fn bookmark(&self) -> Option<&str> {
         match self.bookmark {
             Some(ref bookmark) => Some(&bookmark[..]),
