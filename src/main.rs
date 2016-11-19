@@ -30,13 +30,17 @@ fn main() {
 
     let mut graph = Graph::connect("127.0.0.1:7687", "neo4j", "password");
     println!("Connected to server {}", graph.server_version());
-    graph.begin();
     graph.run("CREATE (a:Person {name:$name}) RETURN a", parameters!("name" => "Alice"));
-    graph.commit();
+    graph.sync();
+
+
+
+    //graph.begin();
+    //graph.commit();
+
 
 //    connection.run("RETURN $x", parameters!("x" => vec!(-256, -255, -128, -127, -16, -15, -1, 0, 1, 15, 16, 127, 128, 255, 256)));
 //    connection.run("RETURN $y", parameters!("y" => "hello, world"));
 //    connection.run("UNWIND range(1, 3) AS n RETURN n", parameters!());
 
-    graph.sync();
 }
