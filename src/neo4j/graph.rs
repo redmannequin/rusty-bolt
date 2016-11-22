@@ -50,31 +50,40 @@ impl Graph {
 }
 
 struct DirectBoltConnection {
-    connection: BoltStream,
+    bolt: BoltStream,
     server_version: Option<String>,
 }
 impl DirectBoltConnection {
     pub fn new(address: &str, user: &str, password: &str) -> DirectBoltConnection {
-        let mut connection = BoltStream::connect(address);
+        let mut bolt = BoltStream::connect(address);
 
-        let init = connection.pack_init(user, password);
-        connection.send();
-        connection.fetch_summary(init);
-//        let server_version = match connection.response_metadata(init) {
-//            Some(ref metadata) => match metadata.get("server") {
-//                Some(ref server) => match *server {
-//                    &Value::String(ref string) => Some(string.clone()),
-//                    _ => None,
-//                },
-//                _ => None,
-//            },
-//            _ => None,
-//        };
-//        connection.response_done(init);
+        bolt.pack_init(user, password);
+        let init = bolt.collect_response();
+        bolt.send();
+        let summary = bolt.fetch_summary(init).unwrap();
+        bolt.compact_responses();
+
+        let server_version = match summary {
+            BoltSummary::Success(ref fields) => match fields.get(0) {
+                Some(value) => match value {
+                    &Value::Map(ref metadata) => match metadata.get("server") {
+                        Some(server) => match *server {
+                            Value::String(ref string) => Some(string.clone()),
+                            _ => None,
+                        },
+                        _ => None,
+                    },
+                    _ => None,
+                },
+                _ => None,
+            },
+            BoltSummary::Ignored(_) => None,
+            BoltSummary::Failure(_) => None,
+        };
 
         DirectBoltConnection {
-            connection: connection,
-            server_version: None,
+            bolt: bolt,
+            server_version: server_version,
         }
     }
 }
@@ -88,17 +97,20 @@ impl Graph for DirectBoltConnection {
     }
 
     fn begin(&mut self) {
-        self.connection.pack_run("BEGIN", parameters!());
-        let body = self.connection.pack_discard_all();
-        // TODO: mark as "done" without fetching summary (discard response or something)
-        self.connection.mark_done(body);
+        self.bolt.pack_run("BEGIN", parameters!());
+        self.bolt.pack_discard_all();
+        self.bolt.ignore_response();
+        self.bolt.ignore_response();
     }
 
     fn commit(&mut self) -> CommitResult {
-        self.connection.pack_run("COMMIT", parameters!());
-        let body = self.connection.pack_discard_all();
-        self.connection.send();
-        let summary = self.connection.fetch_summary(body);
+        self.bolt.pack_run("COMMIT", parameters!());
+        self.bolt.pack_discard_all();
+        self.bolt.ignore_response();
+        let body = self.bolt.collect_response();
+        self.bolt.send();
+        let summary = self.bolt.fetch_summary(body);
+        self.bolt.compact_responses();
         let bookmark: Option<String> = match summary {
             Some(summary) => match summary {
                 BoltSummary::Success(ref fields) => match fields.get(0) {
@@ -118,44 +130,53 @@ impl Graph for DirectBoltConnection {
             },
             _ => None,
         };
-//        self.connection.response_done(header);
-//        self.connection.response_done(footer);
         CommitResult { bookmark: bookmark }
     }
 
     fn reset(&mut self) {
-        let reset = self.connection.pack_reset();
-        self.connection.send();
-        self.connection.fetch_summary(reset);
+        self.bolt.pack_reset();
+        let reset = self.bolt.collect_response();
+        self.bolt.send();
+        self.bolt.fetch_summary(reset);
+        self.bolt.compact_responses();
     }
 
     fn rollback(&mut self) {
-        self.connection.pack_run("ROLLBACK", parameters!());
-        let body = self.connection.pack_discard_all();
-        self.connection.send();
-        self.connection.fetch_summary(body);
+        self.bolt.pack_run("ROLLBACK", parameters!());
+        self.bolt.pack_discard_all();
+        self.bolt.ignore_response();
+        let body = self.bolt.collect_response();
+        self.bolt.send();
+        self.bolt.fetch_summary(body);
+        self.bolt.compact_responses();
     }
 
     fn run(&mut self, statement: &str, parameters: HashMap<&str, Value>) -> Cursor {
-        let head = self.connection.pack_run(statement, parameters);
-        let body = self.connection.pack_pull_all();
+        self.bolt.pack_run(statement, parameters);
+        self.bolt.pack_pull_all();
+        let head = self.bolt.collect_response();
+        let body = self.bolt.collect_response();
         Cursor { head: head, body: body }
     }
 
     fn send(&mut self) {
-        self.connection.send();
+        self.bolt.send();
     }
 
     fn head(&mut self, cursor: Cursor) -> Option<BoltSummary> {
-        self.connection.fetch_summary(cursor.head)
+        let summary = self.bolt.fetch_summary(cursor.head);
+        self.bolt.compact_responses();
+        summary
     }
 
     fn next(&mut self, cursor: Cursor) -> Option<BoltDetail> {
-        self.connection.fetch_detail(cursor.body)
+        self.bolt.fetch_detail(cursor.body)
     }
 
     fn done(&mut self, cursor: Cursor) -> Option<BoltSummary> {
-        self.connection.fetch_summary(cursor.body)
+        let summary = self.bolt.fetch_summary(cursor.body);
+        self.bolt.compact_responses();
+        summary
     }
 }
 

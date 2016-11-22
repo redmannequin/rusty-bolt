@@ -49,7 +49,7 @@ impl BoltStream {
                      responses_done: 0, current_response_index: 0 }
     }
 
-    pub fn pack_init(&mut self, user: &str, password: &str) -> usize {
+    pub fn pack_init(&mut self, user: &str, password: &str) {
         info!("C: INIT {:?} {{\"scheme\": \"basic\", \"principal\": {:?}, \"credentials\": \"...\"}}", USER_AGENT, user);
         self.packer.pack_structure_header(2, 0x01);
         self.packer.pack_string(USER_AGENT);
@@ -61,27 +61,21 @@ impl BoltStream {
         self.packer.pack_string("credentials");
         self.packer.pack_string(password);
         self.request_markers.push_back(self.packer.len());
-        self.responses.push_back(BoltResponse::new());
-        self.responses_done + self.responses.len() - 1
     }
 
-    pub fn pack_ack_failure(&mut self) -> usize {
+    pub fn pack_ack_failure(&mut self) {
         info!("C: ACK_FAILURE");
         self.packer.pack_structure_header(0, 0x0E);
         self.request_markers.push_back(self.packer.len());
-        self.responses.push_back(BoltResponse::new());
-        self.responses_done + self.responses.len() - 1
     }
 
-    pub fn pack_reset(&mut self) -> usize {
+    pub fn pack_reset(&mut self) {
         info!("C: RESET");
         self.packer.pack_structure_header(0, 0x0F);
         self.request_markers.push_back(self.packer.len());
-        self.responses.push_back(BoltResponse::new());
-        self.responses_done + self.responses.len() - 1
     }
 
-    pub fn pack_run(&mut self, statement: &str, parameters: HashMap<&str, Value>) -> usize {
+    pub fn pack_run(&mut self, statement: &str, parameters: HashMap<&str, Value>) {
         info!("C: RUN {:?} {:?}", statement, parameters);
         self.packer.pack_structure_header(2, 0x10);
         self.packer.pack_string(statement);
@@ -91,24 +85,18 @@ impl BoltStream {
             self.packer.pack(value);
         }
         self.request_markers.push_back(self.packer.len());
-        self.responses.push_back(BoltResponse::new());
-        self.responses_done + self.responses.len() - 1
     }
 
-    pub fn pack_discard_all(&mut self) -> usize {
+    pub fn pack_discard_all(&mut self) {
         info!("C: DISCARD_ALL");
         self.packer.pack_structure_header(0, 0x2F);
         self.request_markers.push_back(self.packer.len());
-        self.responses.push_back(BoltResponse::new());
-        self.responses_done + self.responses.len() - 1
     }
 
-    pub fn pack_pull_all(&mut self) -> usize {
+    pub fn pack_pull_all(&mut self) {
         info!("C: PULL_ALL");
         self.packer.pack_structure_header(0, 0x3F);
         self.request_markers.push_back(self.packer.len());
-        self.responses.push_back(BoltResponse::new());
-        self.responses_done + self.responses.len() - 1
     }
 
     /// Send all queued outgoing messages
@@ -129,16 +117,67 @@ impl BoltStream {
         self.request_markers.clear();
     }
 
-    fn read_chunk_size(&mut self) -> usize {
-        let mut chunk_header = &mut [0u8; 2];
-        let _ = self.stream.read_exact(chunk_header);
-//        log_line!("S: [{:02X} {:02X}]", chunk_header[0] as u8, chunk_header[1] as u8);
-        0x100 * chunk_header[0] as usize + chunk_header[1] as usize
+    pub fn collect_response(&mut self) -> usize {
+        self.responses.push_back(BoltResponse::new());
+        self.responses_done + self.responses.len() - 1
+    }
+
+    pub fn ignore_response(&mut self) {
+        self.responses.push_back(BoltResponse::done());
+    }
+
+    // TODO: hook in pruning
+    pub fn compact_responses(&mut self) {
+        let mut pruning = true;
+        while pruning && self.current_response_index > 0 {
+            match self.responses.front() {
+                Some(response) => {
+                    if !response.done {
+                        pruning = false;
+                    }
+                },
+                _ => {
+                    pruning = false;
+                },
+            }
+            if pruning {
+                self.responses.pop_front();
+                self.responses_done += 1;
+                self.current_response_index -= 1;
+            }
+        }
+    }
+
+    /// Fetches the next response message for the designated response,
+    /// assuming that response is not already completely buffered.
+    ///
+    pub fn fetch_detail(&mut self, response_id: usize) -> Option<BoltDetail> {
+        let response_index = response_id - self.responses_done;
+        while self.current_response_index < response_index {
+            self.read_message();
+        }
+        if self.current_response_index == response_index {
+            self.read_message();
+        }
+        self.responses[response_index].detail.pop_front()
+    }
+
+    /// Fetches all response messages for the designated response,
+    /// assuming that response is not already completely buffered.
+    ///
+    pub fn fetch_summary(&mut self, response_id: usize) -> Option<BoltSummary> {
+        let response_index = response_id - self.responses_done;
+        while self.current_response_index <= response_index {
+            self.read_message();
+        }
+        let ref mut response = self.responses[response_index];
+        response.done = true;
+        response.summary.take()
     }
 
     /// Reads the next message from the stream into the read buffer.
     ///
-    pub fn read_message(&mut self) -> u8 {
+    fn read_message(&mut self) -> u8 {
         self.unpacker.clear();
         let mut chunk_size: usize = self.read_chunk_size();
         while chunk_size > 0 {
@@ -174,7 +213,6 @@ impl BoltStream {
                             response.summary = Some(BoltSummary::Failure(fields));
                         }
                         self.current_response_index += 1;
-                        self.pack_ack_failure();
                     },
                     _ => panic!("Unknown response message with signature {:02X}", signature),
                 }
@@ -184,75 +222,11 @@ impl BoltStream {
         }
     }
 
-    /// Fetches the next response message for the designated response,
-    /// assuming that response is not already completely buffered.
-    ///
-    pub fn fetch_detail(&mut self, response_id: usize) -> Option<BoltDetail> {
-        let response_index = response_id - self.responses_done;
-        while self.current_response_index < response_index {
-            self.read_message();
-        }
-        if self.current_response_index == response_index {
-            self.read_message();
-        }
-        self.responses[response_index].detail.pop_front()
-    }
-
-    /// Fetches all response messages for the designated response,
-    /// assuming that response is not already completely buffered.
-    ///
-    pub fn fetch_summary(&mut self, response_id: usize) -> Option<BoltSummary> {
-        let response_index = response_id - self.responses_done;
-        while self.current_response_index <= response_index {
-            self.read_message();
-        }
-        let ref mut response = self.responses[response_index];
-        response.done = true;
-        response.summary.take()
-    }
-
-    pub fn mark_done(&mut self, response_id: usize) {
-        let response_index = response_id - self.responses_done;
-        self.responses[response_index].done = true;
-    }
-
-    // TODO: expose metadata
-//    pub fn response_metadata(&self, response_id: usize) -> Option<&HashMap<String, Value>> {
-//        match self.response_summary(response_id) {
-//            Some(summary) => match summary {
-//                &BoltSummary::Success(ref fields) => match fields.get(0) {
-//                    Some(ref field) => match *field {
-//                        &Value::Map(ref metadata) => Some(metadata),
-//                        _ => None,
-//                    },
-//                    _ => None,
-//                },
-//                _ => None,
-//            },
-//            _ => None,
-//        }
-//    }
-
-    // TODO: hook in pruning
-    fn prune_responses(&mut self) {
-        let mut pruning = true;
-        while pruning && self.current_response_index > 0 {
-            match self.responses.front() {
-                Some(response) => {
-                    if !response.done {
-                        pruning = false;
-                    }
-                },
-                _ => {
-                    pruning = false;
-                },
-            }
-            if pruning {
-                self.responses.pop_front();
-                self.responses_done += 1;
-                self.current_response_index -= 1;
-            }
-        }
+    fn read_chunk_size(&mut self) -> usize {
+        let mut chunk_header = &mut [0u8; 2];
+        let _ = self.stream.read_exact(chunk_header);
+//        log_line!("S: [{:02X} {:02X}]", chunk_header[0] as u8, chunk_header[1] as u8);
+        0x100 * chunk_header[0] as usize + chunk_header[1] as usize
     }
 
 }
@@ -291,6 +265,9 @@ pub struct BoltResponse {
 impl BoltResponse {
     pub fn new() -> BoltResponse {
         BoltResponse { detail: VecDeque::new(), summary: None, done: false }
+    }
+    pub fn done() -> BoltResponse {
+        BoltResponse { detail: VecDeque::new(), summary: None, done: true }
     }
 }
 
