@@ -206,7 +206,14 @@ impl BoltStream {
         while self.current_response_index <= response_index {
             self.read_message();
         }
-        self.responses[response_index].summary.take()
+        let ref mut response = self.responses[response_index];
+        response.done = true;
+        response.summary.take()
+    }
+
+    pub fn mark_done(&mut self, response_id: usize) {
+        let response_index = response_id - self.responses_done;
+        self.responses[response_index].done = true;
     }
 
     // TODO: expose metadata
@@ -226,27 +233,27 @@ impl BoltStream {
 //        }
 //    }
 
-    // TODO: prune used responses
-//    fn prune_responses(&mut self) {
-//        let mut pruning = true;
-//        while pruning && self.current_response_index > 0 {
-//            match self.responses.front() {
-//                Some(response) => {
-//                    if !response.done {
-//                        pruning = false;
-//                    }
-//                },
-//                _ => {
-//                    pruning = false;
-//                },
-//            }
-//            if pruning {
-//                self.responses.pop_front();
-//                self.responses_done += 1;
-//                self.current_response_index -= 1;
-//            }
-//        }
-//    }
+    // TODO: hook in pruning
+    fn prune_responses(&mut self) {
+        let mut pruning = true;
+        while pruning && self.current_response_index > 0 {
+            match self.responses.front() {
+                Some(response) => {
+                    if !response.done {
+                        pruning = false;
+                    }
+                },
+                _ => {
+                    pruning = false;
+                },
+            }
+            if pruning {
+                self.responses.pop_front();
+                self.responses_done += 1;
+                self.current_response_index -= 1;
+            }
+        }
+    }
 
 }
 
@@ -279,10 +286,11 @@ impl fmt::Debug for BoltSummary {
 pub struct BoltResponse {
     detail: VecDeque<BoltDetail>,
     summary: Option<BoltSummary>,
+    done: bool,
 }
 impl BoltResponse {
     pub fn new() -> BoltResponse {
-        BoltResponse { detail: VecDeque::new(), summary: None }
+        BoltResponse { detail: VecDeque::new(), summary: None, done: false }
     }
 }
 

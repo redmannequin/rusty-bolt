@@ -91,7 +91,7 @@ impl Graph for DirectBoltConnection {
         self.connection.pack_run("BEGIN", parameters!());
         let body = self.connection.pack_discard_all();
         // TODO: mark as "done" without fetching summary (discard response or something)
-        self.connection.fetch_summary(body);
+        self.connection.mark_done(body);
     }
 
     fn commit(&mut self) -> CommitResult {
