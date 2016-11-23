@@ -1,5 +1,5 @@
 use std::io::{stderr, Write};
-//use std::env;
+use std::env;
 
 #[macro_use]
 extern crate log;
@@ -27,14 +27,18 @@ use neo4j::graph::{Graph};
 use neo4j::bolt::BoltDetail;  // TODO encapsulate
 
 fn main() {
-    let statement = String::from("UNWIND range(1, 3) AS n RETURN n");
+    let mut args = env::args();
+
+    let statement = match args.nth(1) {
+        Some(string) => string,
+        _ => String::from("UNWIND range(1, 3) AS n RETURN n"),
+    };
     let parameters = parameters!();
 
     let _ = log::set_logger(|max_log_level| {
         max_log_level.set(log::LogLevelFilter::Info);
         Box::new(SimpleLogger)
     });
-
 
     // connect
     let mut graph = Graph::connect("127.0.0.1:7687", "neo4j", "password");
