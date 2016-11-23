@@ -39,9 +39,9 @@ pub trait Graph {
     fn rollback(&mut self);
     fn run(&mut self, statement: &str, parameters: HashMap<&str, Value>) -> Cursor;
     fn send(&mut self);
-    fn head(&mut self, cursor: Cursor) -> Option<BoltSummary>;
-    fn next(&mut self, cursor: Cursor) -> Option<BoltDetail>;
-    fn done(&mut self, cursor: Cursor) -> Option<BoltSummary>;
+    fn fetch_header(&mut self, cursor: Cursor) -> Option<BoltSummary>;
+    fn fetch(&mut self, cursor: Cursor) -> Option<BoltDetail>;
+    fn fetch_summary(&mut self, cursor: Cursor) -> Option<BoltSummary>;
 }
 impl Graph {
     pub fn connect(address: &str, user: &str, password: &str) -> Box<Graph> {
@@ -65,20 +65,14 @@ impl DirectBoltConnection {
 
         let server_version = match summary {
             BoltSummary::Success(ref fields) => match fields.get(0) {
-                Some(value) => match value {
-                    &Value::Map(ref metadata) => match metadata.get("server") {
-                        Some(server) => match *server {
-                            Value::String(ref string) => Some(string.clone()),
-                            _ => None,
-                        },
-                        _ => None,
-                    },
+                Some(&Value::Map(ref metadata)) => match metadata.get("server") {
+                    Some(&Value::String(ref string)) => Some(string.clone()),
                     _ => None,
                 },
                 _ => None,
             },
-            BoltSummary::Ignored(_) => None,
-            BoltSummary::Failure(_) => None,
+            BoltSummary::Ignored(_) => panic!("Protocol violation! INIT should not be IGNORED"),
+            BoltSummary::Failure(_) => panic!("INIT returned FAILURE"),
         };
 
         DirectBoltConnection {
@@ -111,25 +105,18 @@ impl Graph for DirectBoltConnection {
         self.bolt.send();
         let summary = self.bolt.fetch_summary(body);
         self.bolt.compact_responses();
+
         let bookmark: Option<String> = match summary {
-            Some(summary) => match summary {
-                BoltSummary::Success(ref fields) => match fields.get(0) {
-                    Some(ref field) => match *field {
-                        &Value::Map(ref metadata) => match metadata.get("bookmark") {
-                            Some(value) => match value {
-                                &Value::String(ref bookmark) => Some(bookmark.clone()),
-                                _ => None,
-                            },
-                            _ => None,
-                        },
-                        _ => None,
-                    },
+            Some(BoltSummary::Success(ref fields)) => match fields.get(0) {
+                Some(&Value::Map(ref metadata)) => match metadata.get("bookmark") {
+                    Some(&Value::String(ref bookmark)) => Some(bookmark.clone()),
                     _ => None,
                 },
                 _ => None,
             },
             _ => None,
         };
+
         CommitResult { bookmark: bookmark }
     }
 
@@ -163,19 +150,36 @@ impl Graph for DirectBoltConnection {
         self.bolt.send();
     }
 
-    fn head(&mut self, cursor: Cursor) -> Option<BoltSummary> {
+    fn fetch_header(&mut self, cursor: Cursor) -> Option<BoltSummary> {
         let summary = self.bolt.fetch_summary(cursor.head);
         self.bolt.compact_responses();
+        match summary {
+            Some(BoltSummary::Ignored(_)) => panic!("RUN was IGNORED"),
+            Some(BoltSummary::Failure(_)) => {
+                self.bolt.pack_ack_failure();
+                self.bolt.ignore_response();
+                self.bolt.send();
+            },
+            _ => (),
+        };
         summary
     }
 
-    fn next(&mut self, cursor: Cursor) -> Option<BoltDetail> {
+    fn fetch(&mut self, cursor: Cursor) -> Option<BoltDetail> {
         self.bolt.fetch_detail(cursor.body)
     }
 
-    fn done(&mut self, cursor: Cursor) -> Option<BoltSummary> {
+    fn fetch_summary(&mut self, cursor: Cursor) -> Option<BoltSummary> {
         let summary = self.bolt.fetch_summary(cursor.body);
         self.bolt.compact_responses();
+        match summary {
+            Some(BoltSummary::Failure(_)) => {
+                self.bolt.pack_ack_failure();
+                self.bolt.ignore_response();
+                self.bolt.send();
+            },
+            _ => (),
+        };
         summary
     }
 }

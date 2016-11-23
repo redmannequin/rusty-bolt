@@ -49,6 +49,8 @@ impl BoltStream {
                      responses_done: 0, current_response_index: 0 }
     }
 
+    /// Pack an INIT message.
+    ///
     pub fn pack_init(&mut self, user: &str, password: &str) {
         info!("C: INIT {:?} {{\"scheme\": \"basic\", \"principal\": {:?}, \"credentials\": \"...\"}}", USER_AGENT, user);
         self.packer.pack_structure_header(2, 0x01);
@@ -63,18 +65,24 @@ impl BoltStream {
         self.request_markers.push_back(self.packer.len());
     }
 
+    /// Pack an ACK_FAILURE message.
+    ///
     pub fn pack_ack_failure(&mut self) {
         info!("C: ACK_FAILURE");
         self.packer.pack_structure_header(0, 0x0E);
         self.request_markers.push_back(self.packer.len());
     }
 
+    /// Pack a RESET message.
+    ///
     pub fn pack_reset(&mut self) {
         info!("C: RESET");
         self.packer.pack_structure_header(0, 0x0F);
         self.request_markers.push_back(self.packer.len());
     }
 
+    /// Pack a RUN message.
+    ///
     pub fn pack_run(&mut self, statement: &str, parameters: HashMap<&str, Value>) {
         info!("C: RUN {:?} {:?}", statement, parameters);
         self.packer.pack_structure_header(2, 0x10);
@@ -87,20 +95,24 @@ impl BoltStream {
         self.request_markers.push_back(self.packer.len());
     }
 
+    /// Pack a DISCARD_ALL message.
+    ///
     pub fn pack_discard_all(&mut self) {
         info!("C: DISCARD_ALL");
         self.packer.pack_structure_header(0, 0x2F);
         self.request_markers.push_back(self.packer.len());
     }
 
+    /// Pack a PULL_ALL message.
+    ///
     pub fn pack_pull_all(&mut self) {
         info!("C: PULL_ALL");
         self.packer.pack_structure_header(0, 0x3F);
         self.request_markers.push_back(self.packer.len());
     }
 
-    /// Send all queued outgoing messages
-    // TODO: autosend when response is requested (maybe)
+    /// Send all queued outgoing messages.
+    ///
     pub fn send(&mut self) {
         info!("C: <SEND>");
         let mut offset: usize = 0;

@@ -1,3 +1,6 @@
+use std::io::{stderr, Write};
+//use std::env;
+
 #[macro_use]
 extern crate log;
 use log::{LogRecord, LogLevel, LogMetadata};
@@ -11,7 +14,7 @@ impl log::Log for SimpleLogger {
 
     fn log(&self, record: &LogRecord) {
         if self.enabled(record.metadata()) {
-            println!("[{}]  {}", record.level(), record.args());
+            let _ = writeln!(stderr(), "[{}]  {}", record.level(), record.args());
         }
     }
 }
@@ -20,49 +23,46 @@ impl log::Log for SimpleLogger {
 
 #[macro_use]
 mod neo4j;
-use neo4j::graph::Graph;
-
-//fn run_unwind_done(mut graph: Box<Graph>) {
-//    let cursor = graph.run("UNWIND range(1, 3) AS n RETURN n", parameters!());
-//    graph.done(cursor);
-//}
-//
-fn run_unwind(mut graph: Box<Graph>) {
-    let cursor = graph.run("UNWIND range(1, 3) AS n RETURN n", parameters!());
-    graph.send();
-    println!("{:?}", graph.next(cursor));
-    println!("{:?}", graph.next(cursor));
-    println!("{:?}", graph.next(cursor));
-    println!("{:?}", graph.next(cursor));
-    println!("{:?}", graph.done(cursor));
-    println!("{:?}", graph.done(cursor));
-}
-
-fn run_tx(mut graph: Box<Graph>) {
-    graph.begin();
-    let cursor = graph.run("CREATE (a:Person {name:$name}) RETURN a", parameters!("name" => "Alice"));
-    let commit_result = graph.commit();
-    println!("Bookmark {:?}", commit_result.bookmark());
-    //println!("{:?}", graph.get(cursor))
-    graph.done(cursor);
-}
+use neo4j::graph::{Graph};
+use neo4j::bolt::BoltDetail;  // TODO encapsulate
 
 fn main() {
+    let statement = String::from("UNWIND range(1, 3) AS n RETURN n");
+    let parameters = parameters!();
+
     let _ = log::set_logger(|max_log_level| {
         max_log_level.set(log::LogLevelFilter::Info);
         Box::new(SimpleLogger)
     });
 
-    let graph = Graph::connect("127.0.0.1:7687", "neo4j", "password");
+
+    // connect
+    let mut graph = Graph::connect("127.0.0.1:7687", "neo4j", "password");
     println!("Connected to server {}", graph.server_version());
 
-    //run_unwind(graph);
+    // begin transaction
+    graph.begin();
 
-    run_tx(graph);
+    // execute statement
+    let cursor = graph.run(&statement[..], parameters);
+    graph.send();
 
+    let header = graph.fetch_header(cursor);
+    println!("HEAD {:?}", header);
 
-//    connection.run("RETURN $x", parameters!("x" => vec!(-256, -255, -128, -127, -16, -15, -1, 0, 1, 15, 16, 127, 128, 255, 256)));
-//    connection.run("RETURN $y", parameters!("y" => "hello, world"));
-//    connection.run("UNWIND range(1, 3) AS n RETURN n", parameters!());
+    // iterate result
+    let mut record: Option<BoltDetail> = graph.fetch(cursor);
+    while record.is_some() {
+        println!("BODY {:?}", record);
+        record = graph.fetch(cursor);
+    }
+
+    // close result
+    let summary = graph.fetch_summary(cursor);
+    println!("FOOT {:?}", summary);
+
+    // commit transaction
+    let commit_result = graph.commit();
+    println!("Bookmark {:?}", commit_result.bookmark());
 
 }
