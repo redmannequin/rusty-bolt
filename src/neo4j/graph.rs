@@ -32,6 +32,7 @@ macro_rules! parameters(
 // GRAPH //
 
 pub trait Graph {
+    fn protocol_version(&self) -> u32;
     fn server_version(&self) -> &str;
     fn begin(&mut self);
     fn commit(&mut self) -> CommitResult;
@@ -82,6 +83,10 @@ impl DirectBoltConnection {
     }
 }
 impl Graph for DirectBoltConnection {
+
+    fn protocol_version(&self) -> u32 {
+        self.bolt.protocol_version()
+    }
 
     fn server_version(&self) -> &str {
         match self.server_version {

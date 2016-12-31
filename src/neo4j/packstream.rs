@@ -30,6 +30,23 @@ impl fmt::Debug for Value {
     }
 }
 
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Value::List(ref values) => write_tsv(f, values),
+            _ => write!(f, "{:?}", self),
+        }
+    }
+}
+
+pub fn write_tsv(f: &mut fmt::Formatter, values: &[Value]) -> fmt::Result {
+    let last = values.len() - 1;
+    for value in values[..last].iter() {
+        let _ = write!(f, "{:?}\t", value);
+    }
+    write!(f, "{:?}", values[last])
+}
+
 pub trait ValueCast {
     fn from(&self) -> Value;
 }

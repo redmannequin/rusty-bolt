@@ -4,7 +4,7 @@ use std::collections::{HashMap, VecDeque};
 use std::io::prelude::*;
 use std::net::{TcpStream, ToSocketAddrs};
 
-use neo4j::packstream::{Value, Packer, Unpacker};
+use neo4j::packstream::{Value, Packer, Unpacker, write_tsv};
 
 const BOLT: [u8; 4] = [0x60, 0x60, 0xB0, 0x17];
 const RAW_BOLT_VERSIONS: [u8; 16] = [0x00, 0x00, 0x00, 0x01,
@@ -23,6 +23,7 @@ pub struct BoltStream {
     responses: VecDeque<BoltResponse>,
     responses_done: usize,
     current_response_index: usize,
+    protocol_version: u32,
 }
 
 impl BoltStream {
@@ -33,26 +34,31 @@ impl BoltStream {
         let _ = stream.write(&RAW_BOLT_VERSIONS);
         let mut buf = [0; 4];
         let result = stream.read(&mut buf);
+        let version: u32;
         match result {
             Ok(_) => {
-                let version: u32 = (buf[0] as u32) << 24 |
-                                   (buf[1] as u32) << 16 |
-                                   (buf[2] as u32) << 8 |
-                                   (buf[3] as u32);
-                info!("S: <VERSION {}>", version)
+                version = (buf[0] as u32) << 24 |
+                          (buf[1] as u32) << 16 |
+                          (buf[2] as u32) << 8 |
+                          (buf[3] as u32);
+                //info!("S: <VERSION {}>", version)
             },
             Err(e) => panic!("Got an error: {}", e),
         }
 
         BoltStream { stream: stream, packer: Packer::new(), unpacker: Unpacker::new(),
                      request_markers: VecDeque::new(), responses: VecDeque::new(),
-                     responses_done: 0, current_response_index: 0 }
+                     responses_done: 0, current_response_index: 0, protocol_version: version }
+    }
+
+    pub fn protocol_version(&self) -> u32 {
+        self.protocol_version
     }
 
     /// Pack an INIT message.
     ///
     pub fn pack_init(&mut self, user: &str, password: &str) {
-        info!("C: INIT {:?} {{\"scheme\": \"basic\", \"principal\": {:?}, \"credentials\": \"...\"}}", USER_AGENT, user);
+        //info!("C: INIT {:?} {{\"scheme\": \"basic\", \"principal\": {:?}, \"credentials\": \"...\"}}", USER_AGENT, user);
         self.packer.pack_structure_header(2, 0x01);
         self.packer.pack_string(USER_AGENT);
         self.packer.pack_map_header(3);
@@ -68,7 +74,7 @@ impl BoltStream {
     /// Pack an ACK_FAILURE message.
     ///
     pub fn pack_ack_failure(&mut self) {
-        info!("C: ACK_FAILURE");
+        //info!("C: ACK_FAILURE");
         self.packer.pack_structure_header(0, 0x0E);
         self.request_markers.push_back(self.packer.len());
     }
@@ -76,7 +82,7 @@ impl BoltStream {
     /// Pack a RESET message.
     ///
     pub fn pack_reset(&mut self) {
-        info!("C: RESET");
+        //info!("C: RESET");
         self.packer.pack_structure_header(0, 0x0F);
         self.request_markers.push_back(self.packer.len());
     }
@@ -84,7 +90,7 @@ impl BoltStream {
     /// Pack a RUN message.
     ///
     pub fn pack_run(&mut self, statement: &str, parameters: HashMap<&str, Value>) {
-        info!("C: RUN {:?} {:?}", statement, parameters);
+        //info!("C: RUN {:?} {:?}", statement, parameters);
         self.packer.pack_structure_header(2, 0x10);
         self.packer.pack_string(statement);
         self.packer.pack_map_header(parameters.len());
@@ -98,7 +104,7 @@ impl BoltStream {
     /// Pack a DISCARD_ALL message.
     ///
     pub fn pack_discard_all(&mut self) {
-        info!("C: DISCARD_ALL");
+        //info!("C: DISCARD_ALL");
         self.packer.pack_structure_header(0, 0x2F);
         self.request_markers.push_back(self.packer.len());
     }
@@ -106,7 +112,7 @@ impl BoltStream {
     /// Pack a PULL_ALL message.
     ///
     pub fn pack_pull_all(&mut self) {
-        info!("C: PULL_ALL");
+        //info!("C: PULL_ALL");
         self.packer.pack_structure_header(0, 0x3F);
         self.request_markers.push_back(self.packer.len());
     }
@@ -114,7 +120,7 @@ impl BoltStream {
     /// Send all queued outgoing messages.
     ///
     pub fn send(&mut self) {
-        info!("C: <SEND>");
+        //info!("C: <SEND>");
         let mut offset: usize = 0;
         for &mark in &self.request_markers {
             for chunk_data in self.packer[offset..mark].chunks(MAX_CHUNK_SIZE) {
@@ -202,24 +208,24 @@ impl BoltStream {
             Value::Structure { signature, fields } => {
                 match signature {
                     0x70 => {
-                        info!("S: SUCCESS {:?}", fields[0]);
+                        //info!("S: SUCCESS {:?}", fields[0]);
                         let mut response = self.responses.get_mut(self.current_response_index).unwrap();
                         response.summary = Some(BoltSummary::Success(fields));
                         self.current_response_index += 1;
                     },
                     0x71 => {
-                        info!("S: RECORD {:?}", fields[0]);
+                        //info!("S: RECORD {:?}", fields[0]);
                         let mut response = self.responses.get_mut(self.current_response_index).unwrap();
                         response.detail.push_back(BoltDetail::Record(fields));
                     },
                     0x7E => {
-                        info!("S: IGNORED {:?}", fields[0]);
+                        //info!("S: IGNORED {:?}", fields[0]);
                         let mut response = self.responses.get_mut(self.current_response_index).unwrap();
                         response.summary = Some(BoltSummary::Ignored(fields));
                         self.current_response_index += 1;
                     },
                     0x7F => {
-                        info!("S: FAILURE {:?}", fields[0]);
+                        //info!("S: FAILURE {:?}", fields[0]);
                         {
                             let mut response = self.responses.get_mut(self.current_response_index).unwrap();
                             response.summary = Some(BoltSummary::Failure(fields));
@@ -250,6 +256,20 @@ impl fmt::Debug for BoltDetail {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             BoltDetail::Record(ref values) => write!(f, "Record({:?})", values),
+        }
+    }
+}
+
+impl fmt::Display for BoltDetail {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            BoltDetail::Record(ref fields) => match fields.len() {
+                0 => write!(f, ""),
+                _ => match fields[0] {
+                    Value::List(ref values) => write_tsv(f, values),
+                    _ => write!(f, ""),
+                },
+            },
         }
     }
 }

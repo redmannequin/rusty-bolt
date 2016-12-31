@@ -24,14 +24,15 @@ impl log::Log for SimpleLogger {
 #[macro_use]
 mod neo4j;
 use neo4j::graph::{Graph};
-use neo4j::bolt::BoltDetail;  // TODO encapsulate
+use neo4j::bolt::{BoltDetail, BoltSummary};  // TODO encapsulate
+use neo4j::packstream::Value;
 
 fn main() {
     let mut args = env::args();
 
     let statement = match args.nth(1) {
         Some(string) => string,
-        _ => String::from("UNWIND range(1, 3) AS n RETURN n"),
+        _ => String::from("UNWIND range(1, 3) AS n RETURN n, n * n AS n_sq, 'no ' + toString(n) AS n_str"),
     };
     let parameters = parameters!();
 
@@ -51,22 +52,32 @@ fn main() {
     let cursor = graph.run(&statement[..], parameters);
     graph.send();
 
-    let header = graph.fetch_header(cursor);
-    println!("HEAD {:?}", header);
+    let header = graph.fetch_header(cursor).unwrap();
+    match header {
+        BoltSummary::Success(values) => match values[0] {
+            Value::Map(ref map) => println!("{}", map.get("fields").unwrap()),
+            _ => panic!("Failed"),
+        },
+        _ => panic!("Failed"),
+    }
+    //println!("HEAD {:?}", header);
 
     // iterate result
-    let mut record: Option<BoltDetail> = graph.fetch(cursor);
-    while record.is_some() {
-        println!("BODY {:?}", record);
-        record = graph.fetch(cursor);
+    let mut sleeve: Option<BoltDetail> = graph.fetch(cursor);
+    while sleeve.is_some() {
+        match sleeve {
+            Some(record) => println!("{}", record),
+            _ => (),
+        }
+        sleeve = graph.fetch(cursor);
     }
 
     // close result
     let summary = graph.fetch_summary(cursor);
-    println!("FOOT {:?}", summary);
+    println!("SUMMARY {:?}", summary);
 
     // commit transaction
     let commit_result = graph.commit();
-    println!("Bookmark {:?}", commit_result.bookmark());
+    println!("Bookmark = {:?}", commit_result.bookmark());
 
 }
