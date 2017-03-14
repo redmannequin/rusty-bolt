@@ -1,0 +1,6 @@
+[package]
+name = "packstream"
+version = "0.1.0"
+authors = ["Nigel Small <nigel@nigelsmall.name>"]
+
+[dependencies]

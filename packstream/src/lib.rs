@@ -142,6 +142,14 @@ impl ValueCast for &'static str {
     }
 }
 
+impl ValueCast for String {
+    fn from(&self) -> Value {
+        let mut s = String::with_capacity(self.len());
+        s.push_str(&self[..]);
+        Value::String(s)
+    }
+}
+
 pub trait ValueMatch {
     fn is_null(&self) -> bool;
     fn is_boolean(&self) -> bool;
@@ -237,13 +245,25 @@ impl Packer {
             &Value::Integer(ref x) => self.pack_integer(*x),
             &Value::Float(ref x) => self.pack_float(*x),
             &Value::String(ref x) => self.pack_string(&x[..]),
-            &Value::List(ref x) => {
-                self.pack_list_header(x.len());
-                for item in x {
+            &Value::List(ref items) => {
+                self.pack_list_header(items.len());
+                for item in items {
                     self.pack(item);
                 }
             },
-            _ => panic!("Unpackable"),
+            &Value::Map(ref items) => {
+                self.pack_map_header(items.len());
+                for (key, value) in items {
+                    self.pack_string(&key[..]);
+                    self.pack(value);
+                }
+            },
+            &Value::Structure { signature, ref fields } => {
+                self.pack_structure_header(fields.len(), signature);
+                for field in fields {
+                    self.pack(&field);
+                }
+            },
         }
     }
 
@@ -561,109 +581,93 @@ impl Unpacker {
 }
 
 #[cfg(test)]
-mod test {
-    use neo4j::packstream::{Value, ValueCast, ValueMatch, Packer, Unpacker};
+mod tests {
 
-    #[test]
-    fn should_cast_value_from_true() {
-        // Given
-        let value = ValueCast::from(&true);
+    mod casting {
+        use super::super::*;
 
-        // Then
-        assert!(ValueMatch::is_boolean(&value));
-        assert_eq!(value, Value::Boolean(true));
-    }
-
-    #[test]
-    fn should_cast_value_from_false() {
-        // Given
-        let value = ValueCast::from(&false);
-
-        // Then
-        assert!(ValueMatch::is_boolean(&value));
-        assert_eq!(value, Value::Boolean(false));
-    }
-
-    #[test]
-    fn should_cast_value_from_i8() {
-        for i in -0x80..0x80 {
+        #[test]
+        fn should_cast_value_from_true() {
             // Given
-            let value = ValueCast::from(&(i as i8));
+            let value = ValueCast::from(&true);
 
             // Then
-            assert!(ValueMatch::is_integer(&value));
-            assert_eq!(value, Value::Integer(i as i64));
+            assert!(ValueMatch::is_boolean(&value));
+            assert_eq!(value, Value::Boolean(true));
+        }
+
+        #[test]
+        fn should_cast_value_from_false() {
+            // Given
+            let value = ValueCast::from(&false);
+
+            // Then
+            assert!(ValueMatch::is_boolean(&value));
+            assert_eq!(value, Value::Boolean(false));
+        }
+
+        #[test]
+        fn should_cast_value_from_i8() {
+            for i in -0x80..0x80 {
+                // Given
+                let value = ValueCast::from(&(i as i8));
+
+                // Then
+                assert!(ValueMatch::is_integer(&value));
+                assert_eq!(value, Value::Integer(i as i64));
+            }
+        }
+
+        #[test]
+        fn should_cast_value_from_i16() {
+            for i in -0x8000..0x8000 {
+                // Given
+                let value = ValueCast::from(&(i as i16));
+
+                // Then
+                assert!(ValueMatch::is_integer(&value));
+                assert_eq!(value, Value::Integer(i as i64));
+            }
+        }
+
+        #[test]
+        fn should_cast_value_from_u8() {
+            for i in 0..0x100 {
+                // Given
+                let value = ValueCast::from(&(i as u8));
+
+                // Then
+                assert!(ValueMatch::is_integer(&value));
+                assert_eq!(value, Value::Integer(i as i64));
+            }
+        }
+
+        #[test]
+        fn should_cast_value_from_u16() {
+            for i in 0..0x10000 {
+                // Given
+                let value = ValueCast::from(&(i as u16));
+
+                // Then
+                assert!(ValueMatch::is_integer(&value));
+                assert_eq!(value, Value::Integer(i as i64));
+            }
         }
     }
 
-    #[test]
-    fn should_cast_value_from_i16() {
-        for i in -0x8000..0x8000 {
-            // Given
-            let value = ValueCast::from(&(i as i16));
+    mod packing {
+        use super::super::*;
 
-            // Then
-            assert!(ValueMatch::is_integer(&value));
-            assert_eq!(value, Value::Integer(i as i64));
-        }
-    }
-
-    #[test]
-    fn should_cast_value_from_u8() {
-        for i in 0..0x100 {
-            // Given
-            let value = ValueCast::from(&(i as u8));
-
-            // Then
-            assert!(ValueMatch::is_integer(&value));
-            assert_eq!(value, Value::Integer(i as i64));
-        }
-    }
-
-    #[test]
-    fn should_cast_value_from_u16() {
-        for i in 0..0x10000 {
-            // Given
-            let value = ValueCast::from(&(i as u16));
-
-            // Then
-            assert!(ValueMatch::is_integer(&value));
-            assert_eq!(value, Value::Integer(i as i64));
-        }
-    }
-
-    #[test]
-    fn should_pack_and_unpack_null() {
-        // Given
-        let mut packer = Packer::new();
-
-        // When
-        packer.pack_null();
-
-        // Then
-        assert_eq!(&packer[..], &[0xC0]);
-
-        // And given
-        let mut unpacker = Unpacker::from_slice(&packer[..]);
-
-        // When
-        let value = unpacker.unpack();
-
-        // Then
-        assert!(ValueMatch::is_null(&value));
-    }
-
-    #[test]
-    fn should_pack_and_unpack_tiny_integer() {
-        for i in 0..128 {
+        #[test]
+        fn should_pack_and_unpack_null() {
             // Given
             let mut packer = Packer::new();
 
             // When
-            packer.pack_integer(i as i64);
+            packer.pack_null();
 
             // Then
-            assert_eq!(&packer[..], &[i as u8]);
+            assert_eq!(&packer[..], &[0xC0]);
 
             // And given
             let mut unpacker = Unpacker::from_slice(&packer[..]);
@@ -672,8 +676,31 @@ mod test {
             let value = unpacker.unpack();
 
             // Then
-            assert!(ValueMatch::is_integer(&value));
-            assert_eq!(value, Value::Integer(i as i64));
+            assert!(ValueMatch::is_null(&value));
+        }
+
+        #[test]
+        fn should_pack_and_unpack_tiny_integer() {
+            for i in 0..128 {
+                // Given
+                let mut packer = Packer::new();
+
+                // When
+                packer.pack_integer(i as i64);
+
+                // Then
+                assert_eq!(&packer[..], &[i as u8]);
+
+                // And given
+                let mut unpacker = Unpacker::from_slice(&packer[..]);
+
+                // When
+                let value = unpacker.unpack();
+
+                // Then
+                assert!(ValueMatch::is_integer(&value));
+                assert_eq!(value, Value::Integer(i as i64));
+            }
         }
     }
 

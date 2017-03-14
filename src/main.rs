@@ -22,17 +22,18 @@ impl log::Log for SimpleLogger {
 //////////////////////////////////////////////////////////////////////
 
 #[macro_use]
-mod neo4j;
-use neo4j::graph::{Graph};
-use neo4j::bolt::{BoltDetail, BoltSummary};  // TODO encapsulate
-use neo4j::packstream::Value;
+extern crate boltstream;
+use boltstream::{Bolt, BoltDetail, BoltSummary};
+
+extern crate packstream;
+use packstream::Value;
 
 fn main() {
     let mut args = env::args();
 
     let statement = match args.nth(1) {
         Some(string) => string,
-        _ => String::from("UNWIND range(1, 3) AS n RETURN n, n * n AS n_sq, 'no ' + toString(n) AS n_str"),
+        _ => String::from("UNWIND range(1, 10) AS n RETURN n, n * n AS n_sq, 'no ' + toString(n) AS n_str"),
     };
     let parameters = parameters!();
 
@@ -42,42 +43,46 @@ fn main() {
     });
 
     // connect
-    let mut graph = Graph::connect("127.0.0.1:7687", "neo4j", "password");
-    println!("Connected to server {}", graph.server_version());
+    let address = "[::1]:7687";
+    let user = "neo4j";
+    let password = "password";
+    let _ = writeln!(stderr(), "Connecting to bolt://{} as {}", address, user);
+    let mut bolt = Bolt::connect(address, user, password);
+    let _ = writeln!(stderr(), "Connected to {}", bolt.server_version());
 
     // begin transaction
-    graph.begin();
+    bolt.begin(None);
 
     // execute statement
-    let cursor = graph.run(&statement[..], parameters);
-    graph.send();
+    let cursor = bolt.run(&statement[..], parameters);
+    bolt.send();
 
-    let header = graph.fetch_header(cursor).unwrap();
-    match header {
-        BoltSummary::Success(values) => match values[0] {
-            Value::Map(ref map) => println!("{}", map.get("fields").unwrap()),
-            _ => panic!("Failed"),
+    match bolt.fetch_header(cursor) {
+        Some(header) => match header {
+            BoltSummary::Success(ref values) => match values[0] {
+                Value::Map(ref map) => println!("{}", map.get("fields").unwrap()),
+                _ => panic!("Failed! Not a map."),
+            },
+            _ => panic!("Failed! Not successful."),
         },
-        _ => panic!("Failed"),
+        _ => panic!("Failed! No header summary"),
     }
-    //println!("HEAD {:?}", header);
 
     // iterate result
-    let mut sleeve: Option<BoltDetail> = graph.fetch(cursor);
+    let mut sleeve: Option<BoltDetail> = bolt.fetch_detail(cursor);
     while sleeve.is_some() {
         match sleeve {
-            Some(record) => println!("{}", record),
+            Some(ref record) => println!("{}", record),
             _ => (),
         }
-        sleeve = graph.fetch(cursor);
+        sleeve = bolt.fetch_detail(cursor);
     }
 
     // close result
-    let summary = graph.fetch_summary(cursor);
-    println!("SUMMARY {:?}", summary);
+    let _ = bolt.fetch_footer(cursor);
 
     // commit transaction
-    let commit_result = graph.commit();
-    println!("Bookmark = {:?}", commit_result.bookmark());
+    let commit_result = bolt.commit();
+    let _ = commit_result.bookmark();
 
 }

@@ -5,3 +5,5 @@ authors = ["Nigel Small <nigel@nigelsmall.name>"]
 
 [dependencies]
 log = "0.3.6"
+boltstream = { path = "boltstream" }
+packstream = { path = "packstream" }
