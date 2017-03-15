@@ -22,11 +22,15 @@ impl log::Log for SimpleLogger {
 //////////////////////////////////////////////////////////////////////
 
 #[macro_use]
-extern crate boltstream;
-use boltstream::{CypherStream, BoltDetail, BoltSummary};
+extern crate cypherstream;
+use cypherstream::{CypherStream};
 
+extern crate boltstream;
+use boltstream::{BoltSummary};
+
+#[macro_use]
 extern crate packstream;
-use packstream::Value;
+use packstream::{Value, ValueCollection};
 
 fn main() {
     let mut args = env::args();
@@ -67,7 +71,7 @@ fn main() {
     }
 
     // iterate result
-    let mut sleeve: Option<BoltDetail> = cypher.fetch_detail(cursor);
+    let mut sleeve: Option<ValueCollection> = cypher.fetch_detail(cursor);
     while sleeve.is_some() {
         match sleeve {
             Some(ref record) => println!("{}", record),

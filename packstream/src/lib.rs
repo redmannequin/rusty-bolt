@@ -221,6 +221,30 @@ impl ValueMatch for Value {
 
 }
 
+pub enum ValueCollection {
+    Record(Vec<Value>),
+}
+impl fmt::Debug for ValueCollection {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            ValueCollection::Record(ref values) => write!(f, "Record({:?})", values),
+        }
+    }
+}
+impl fmt::Display for ValueCollection {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            ValueCollection::Record(ref fields) => match fields.len() {
+                0 => write!(f, ""),
+                _ => match fields[0] {
+                    Value::List(ref values) => write_tsv(f, values),
+                    _ => write!(f, ""),
+                },
+            },
+        }
+    }
+}
+
 pub struct Packer {
     buffer: Vec<u8>,
 }
@@ -579,6 +603,31 @@ impl Unpacker {
     }
 
 }
+
+#[macro_export]
+macro_rules! parameters(
+    {} => {
+        {
+            use std::collections::HashMap;
+
+            HashMap::new()
+        }
+    };
+
+    { $($key:expr => $value:expr),* } => {
+        {
+            use std::collections::HashMap;
+            use $crate::{Value, ValueCast};
+
+            let mut map : HashMap<&str, Value> = HashMap::new();
+            $(
+                map.insert($key, ValueCast::from(&$value));
+            )+;
+
+            map
+        }
+    };
+);
 
 #[cfg(test)]
 mod tests {
