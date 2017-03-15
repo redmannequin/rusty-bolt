@@ -9,7 +9,7 @@ struct SimpleLogger;
 
 impl log::Log for SimpleLogger {
     fn enabled(&self, metadata: &LogMetadata) -> bool {
-        metadata.level() <= LogLevel::Info
+        metadata.level() <= LogLevel::Debug
     }
 
     fn log(&self, record: &LogRecord) {
@@ -23,7 +23,7 @@ impl log::Log for SimpleLogger {
 
 #[macro_use]
 extern crate boltstream;
-use boltstream::{Bolt, BoltDetail, BoltSummary};
+use boltstream::{BoltStream, BoltDetail, BoltSummary};
 
 extern crate packstream;
 use packstream::Value;
@@ -38,7 +38,7 @@ fn main() {
     let parameters = parameters!();
 
     let _ = log::set_logger(|max_log_level| {
-        max_log_level.set(log::LogLevelFilter::Info);
+        max_log_level.set(log::LogLevelFilter::Debug);
         Box::new(SimpleLogger)
     });
 
@@ -46,12 +46,10 @@ fn main() {
     let address = "[::1]:7687";
     let user = "neo4j";
     let password = "password";
-    let _ = writeln!(stderr(), "Connecting to bolt://{} as {}", address, user);
-    let mut bolt = Bolt::connect(address, user, password);
-    let _ = writeln!(stderr(), "Connected to {}", bolt.server_version());
+    let mut bolt = BoltStream::connect(address, user, password).unwrap();
 
     // begin transaction
-    bolt.begin(None);
+    bolt.begin_transaction(None);
 
     // execute statement
     let cursor = bolt.run(&statement[..], parameters);
@@ -82,7 +80,7 @@ fn main() {
     let _ = bolt.fetch_footer(cursor);
 
     // commit transaction
-    let commit_result = bolt.commit();
+    let commit_result = bolt.commit_transaction();
     let _ = commit_result.bookmark();
 
 }

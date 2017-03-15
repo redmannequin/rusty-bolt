@@ -1,8 +1,11 @@
+#[macro_use]
+extern crate log;
+
+use std::error::Error;
 use std::fmt;
 use std::vec::Vec;
 use std::collections::{HashMap, VecDeque};
 use std::io::prelude::*;
-use std::io::{stderr, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 
 extern crate packstream;
@@ -17,40 +20,71 @@ const HANDSHAKE: [u8; 20] = [0x60, 0x60, 0xB0, 0x17,
 const MAX_CHUNK_SIZE: usize = 0xFFFF;
 const USER_AGENT: &'static str = "rusty-bolt/0.1.0";
 
-pub struct BoltStream {
+#[derive(Debug)]
+pub enum BoltError {
+    Connect(&'static str),
+    Handshake(&'static str),
+}
+
+impl fmt::Display for BoltError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            BoltError::Connect(ref err) => write!(f, "Connect error: {}", err),
+            BoltError::Handshake(ref err) => write!(f, "Handshake error: {}", err),
+        }
+    }
+}
+
+impl Error for BoltError {
+    fn description(&self) -> &str {
+        match *self {
+            BoltError::Connect(ref err) => err,
+            BoltError::Handshake(ref err) => err,
+        }
+    }
+}
+
+struct RawBoltStream {
     stream: TcpStream,
     packer: Packer,
+    end_of_request_markers: VecDeque<usize>,
     unpacker: Unpacker,
-    request_markers: VecDeque<usize>,
     responses: VecDeque<BoltResponse>,
     responses_done: usize,
     current_response_index: usize,
     protocol_version: u32,
 }
 
-impl BoltStream {
-    pub fn connect<A: ToSocketAddrs>(address: A) -> BoltStream {
+impl RawBoltStream {
+    pub fn connect<A: ToSocketAddrs>(address: A) -> Result<RawBoltStream, BoltError> {
         match TcpStream::connect(address) {
             Ok(mut stream) => match stream.write(&HANDSHAKE) {
                 Ok(_) => {
                     let mut buf = [0; 4];
                     match stream.read(&mut buf) {
                         Ok(_) => {
-                            let version: u32 = (buf[0] as u32) << 24 |
-                                               (buf[1] as u32) << 16 |
-                                               (buf[2] as u32) << 8 |
-                                               (buf[3] as u32);
+                            let protocol_version: u32 = (buf[0] as u32) << 24 |
+                                                        (buf[1] as u32) << 16 |
+                                                        (buf[2] as u32) << 8 |
+                                                        (buf[3] as u32);
                             //info!("S: <VERSION {}>", version)
-                            BoltStream { stream: stream, packer: Packer::new(), unpacker: Unpacker::new(),
-                                         request_markers: VecDeque::new(), responses: VecDeque::new(),
-                                         responses_done: 0, current_response_index: 0, protocol_version: version }
+                            Ok(RawBoltStream {
+                                stream: stream,
+                                packer: Packer::new(),
+                                end_of_request_markers: VecDeque::new(),
+                                unpacker: Unpacker::new(),
+                                responses: VecDeque::new(),
+                                responses_done: 0,
+                                current_response_index: 0,
+                                protocol_version: protocol_version,
+                            })
                         },
-                        Err(e) => panic!("Got an error on read: {}", e),
+                        Err(_) => Err(BoltError::Handshake("Error on read")),
                     }
                 },
-                Err(e) => panic!("Got an error on write: {}", e),
+                Err(_) => Err(BoltError::Handshake("Error on write")),
             },
-            Err(e) => panic!("Got an error on connect: {}", e),
+            Err(_) => Err(BoltError::Connect("Error on connect")),
         }
     }
 
@@ -58,10 +92,14 @@ impl BoltStream {
         self.protocol_version
     }
 
+    fn mark_end_of_request(&mut self) {
+        self.end_of_request_markers.push_back(self.packer.len());
+    }
+
     /// Pack an INIT message.
     ///
     pub fn pack_init(&mut self, user: &str, password: &str) {
-        //info!("C: INIT {:?} {{\"scheme\": \"basic\", \"principal\": {:?}, \"credentials\": \"...\"}}", USER_AGENT, user);
+        debug!("C: INIT {:?} {{\"scheme\": \"basic\", \"principal\": {:?}, \"credentials\": \"...\"}}", USER_AGENT, user);
         self.packer.pack_structure_header(2, 0x01);
         self.packer.pack_string(USER_AGENT);
         self.packer.pack_map_header(3);
@@ -71,15 +109,15 @@ impl BoltStream {
         self.packer.pack_string(user);
         self.packer.pack_string("credentials");
         self.packer.pack_string(password);
-        self.request_markers.push_back(self.packer.len());
+        self.mark_end_of_request();
     }
 
     /// Pack an ACK_FAILURE message.
     ///
     pub fn pack_ack_failure(&mut self) {
-        //info!("C: ACK_FAILURE");
+        debug!("C: ACK_FAILURE");
         self.packer.pack_structure_header(0, 0x0E);
-        self.request_markers.push_back(self.packer.len());
+        self.mark_end_of_request();
     }
 
     /// Pack a RESET message.
@@ -87,13 +125,13 @@ impl BoltStream {
     pub fn pack_reset(&mut self) {
         //info!("C: RESET");
         self.packer.pack_structure_header(0, 0x0F);
-        self.request_markers.push_back(self.packer.len());
+        self.mark_end_of_request();
     }
 
     /// Pack a RUN message.
     ///
     pub fn pack_run(&mut self, statement: &str, parameters: HashMap<&str, Value>) {
-        //info!("C: RUN {:?} {:?}", statement, parameters);
+        debug!("C: RUN {:?} {:?}", statement, parameters);
         self.packer.pack_structure_header(2, 0x10);
         self.packer.pack_string(statement);
         self.packer.pack_map_header(parameters.len());
@@ -101,31 +139,31 @@ impl BoltStream {
             self.packer.pack_string(name);
             self.packer.pack(value);
         }
-        self.request_markers.push_back(self.packer.len());
+        self.mark_end_of_request();
     }
 
     /// Pack a DISCARD_ALL message.
     ///
     pub fn pack_discard_all(&mut self) {
-        //info!("C: DISCARD_ALL");
+        debug!("C: DISCARD_ALL");
         self.packer.pack_structure_header(0, 0x2F);
-        self.request_markers.push_back(self.packer.len());
+        self.mark_end_of_request();
     }
 
     /// Pack a PULL_ALL message.
     ///
     pub fn pack_pull_all(&mut self) {
-        //info!("C: PULL_ALL");
+        debug!("C: PULL_ALL");
         self.packer.pack_structure_header(0, 0x3F);
-        self.request_markers.push_back(self.packer.len());
+        self.mark_end_of_request();
     }
 
     /// Send all queued outgoing messages.
     ///
     pub fn send(&mut self) {
-        //info!("C: <SEND>");
+        debug!("C: <SEND>");
         let mut offset: usize = 0;
-        for &mark in &self.request_markers {
+        for &mark in &self.end_of_request_markers {
             for chunk_data in self.packer[offset..mark].chunks(MAX_CHUNK_SIZE) {
                 let chunk_size = chunk_data.len();
                 let _ = self.stream.write(&[(chunk_size >> 8) as u8, chunk_size as u8]).unwrap();
@@ -135,7 +173,7 @@ impl BoltStream {
             offset = mark;
         }
         self.packer.clear();
-        self.request_markers.clear();
+        self.end_of_request_markers.clear();
     }
 
     pub fn collect_response(&mut self) -> usize {
@@ -147,7 +185,6 @@ impl BoltStream {
         self.responses.push_back(BoltResponse::done());
     }
 
-    // TODO: hook in pruning
     pub fn compact_responses(&mut self) {
         let mut pruning = true;
         while pruning && self.current_response_index > 0 {
@@ -345,99 +382,74 @@ macro_rules! parameters(
     };
 );
 
-
-// GRAPH //
-
-pub trait Bolt {
-    fn protocol_version(&self) -> u32;
-    fn server_version(&self) -> &str;
-    fn begin(&mut self, bookmark: Option<String>);
-    fn commit(&mut self) -> CommitResult;
-    fn reset(&mut self);
-    fn rollback(&mut self);
-    fn run(&mut self, statement: &str, parameters: HashMap<&str, Value>) -> Cursor;
-    fn send(&mut self);
-
-    /// Fetch the header summary
-    fn fetch_header(&mut self, cursor: Cursor) -> Option<BoltSummary>;
-
-    /// Fetch some detail, if available
-    fn fetch_detail(&mut self, cursor: Cursor) -> Option<BoltDetail>;
-
-    /// Fetch the footer summary
-    fn fetch_footer(&mut self, cursor: Cursor) -> Option<BoltSummary>;
-}
-impl Bolt {
-    pub fn connect(address: &str, user: &str, password: &str) -> Box<Bolt> {
-        Box::new(BoltConnection::new(&address[..], &user[..], &password[..]))
-    }
-}
-
-struct BoltConnection {
-    bolt: BoltStream,
+pub struct BoltStream {
+    raw: RawBoltStream,
     server_version: Option<String>,
 }
-impl BoltConnection {
-    pub fn new(address: &str, user: &str, password: &str) -> BoltConnection {
-        let mut bolt = BoltStream::connect(address);
+impl BoltStream {
+    pub fn connect(address: &str, user: &str, password: &str) -> Result<BoltStream, BoltError> {
+        info!("Connecting to bolt://{} as {}", address, user);
+        match RawBoltStream::connect(address) {
+            Ok(mut raw) => {
+                raw.pack_init(user, password);
+                let init = raw.collect_response();
+                raw.send();
+                let init_summary = raw.fetch_summary(init);
+                let summary = init_summary.unwrap();
+                raw.compact_responses();
 
-        bolt.pack_init(user, password);
-        let init = bolt.collect_response();
-        bolt.send();
-        let init_summary = bolt.fetch_summary(init);
-        let summary = init_summary.unwrap();
-        bolt.compact_responses();
+                let server_version = match summary {
+                    BoltSummary::Success(ref fields) => match fields.get(0) {
+                        Some(&Value::Map(ref metadata)) => match metadata.get("server") {
+                            Some(&Value::String(ref string)) => Some(string.clone()),
+                            _ => None,
+                        },
+                        _ => None,
+                    },
+                    BoltSummary::Ignored(_) => panic!("Protocol violation! INIT should not be IGNORED"),
+                    BoltSummary::Failure(_) => panic!("INIT returned FAILURE"),
+                };
 
-        let server_version = match summary {
-            BoltSummary::Success(ref fields) => match fields.get(0) {
-                Some(&Value::Map(ref metadata)) => match metadata.get("server") {
-                    Some(&Value::String(ref string)) => Some(string.clone()),
-                    _ => None,
-                },
-                _ => None,
+                info!("Connected to server version {:?}", server_version);
+                Ok(BoltStream {
+                    raw: raw,
+                    server_version: server_version,
+                })
             },
-            BoltSummary::Ignored(_) => panic!("Protocol violation! INIT should not be IGNORED"),
-            BoltSummary::Failure(_) => panic!("INIT returned FAILURE"),
-        };
-
-        BoltConnection {
-            bolt: bolt,
-            server_version: server_version,
+            Err(e) => Err(e)
         }
     }
-}
-impl Bolt for BoltConnection {
 
-    fn protocol_version(&self) -> u32 {
-        self.bolt.protocol_version()
+    pub fn protocol_version(&self) -> u32 {
+        self.raw.protocol_version()
     }
 
-    fn server_version(&self) -> &str {
+    pub fn server_version(&self) -> &str {
         match self.server_version {
             Some(ref version) => &version[..],
             None => "",
         }
     }
 
-    fn begin(&mut self, bookmark: Option<String>) {
-        let _ = writeln!(stderr(), "BEGIN @{:?}", bookmark);
-        self.bolt.pack_run("BEGIN", match bookmark {
+    pub fn begin_transaction(&mut self, bookmark: Option<String>) {
+        info!("BEGIN {:?}->|...|", bookmark);
+        self.raw.pack_run("BEGIN", match bookmark {
             Some(string) => parameters!("bookmark" => string),
             _ => parameters!(),
         });
-        self.bolt.pack_discard_all();
-        self.bolt.ignore_response();
-        self.bolt.ignore_response();
+        self.raw.pack_discard_all();
+        self.raw.ignore_response();
+        self.raw.ignore_response();
     }
 
-    fn commit(&mut self) -> CommitResult {
-        self.bolt.pack_run("COMMIT", parameters!());
-        self.bolt.pack_discard_all();
-        self.bolt.ignore_response();
-        let body = self.bolt.collect_response();
-        self.bolt.send();
-        let summary = self.bolt.fetch_summary(body);
-        self.bolt.compact_responses();
+    pub fn commit_transaction(&mut self) -> CommitResult {
+        self.raw.pack_run("COMMIT", parameters!());
+        self.raw.pack_discard_all();
+        self.raw.ignore_response();
+        let body = self.raw.collect_response();
+        self.raw.send();
+        let summary = self.raw.fetch_summary(body);
+        self.raw.compact_responses();
 
         let bookmark: Option<String> = match summary {
             Some(BoltSummary::Success(ref fields)) => match fields.get(0) {
@@ -450,69 +462,72 @@ impl Bolt for BoltConnection {
             _ => None,
         };
 
-        let _ = writeln!(stderr(), "COMMIT @{:?}", bookmark);
+        info!("COMMIT |...|->{:?}", bookmark);
         CommitResult { bookmark: bookmark }
     }
 
-    fn reset(&mut self) {
-        self.bolt.pack_reset();
-        let reset = self.bolt.collect_response();
-        self.bolt.send();
-        self.bolt.fetch_summary(reset);
-        self.bolt.compact_responses();
+    pub fn rollback_transaction(&mut self) {
+        self.raw.pack_run("ROLLBACK", parameters!());
+        self.raw.pack_discard_all();
+        self.raw.ignore_response();
+        let body = self.raw.collect_response();
+        self.raw.send();
+        self.raw.fetch_summary(body);
+        self.raw.compact_responses();
     }
 
-    fn rollback(&mut self) {
-        self.bolt.pack_run("ROLLBACK", parameters!());
-        self.bolt.pack_discard_all();
-        self.bolt.ignore_response();
-        let body = self.bolt.collect_response();
-        self.bolt.send();
-        self.bolt.fetch_summary(body);
-        self.bolt.compact_responses();
+    pub fn reset(&mut self) {
+        self.raw.pack_reset();
+        let reset = self.raw.collect_response();
+        self.raw.send();
+        self.raw.fetch_summary(reset);
+        self.raw.compact_responses();
     }
 
-    fn run(&mut self, statement: &str, parameters: HashMap<&str, Value>) -> Cursor {
-        self.bolt.pack_run(statement, parameters);
-        self.bolt.pack_pull_all();
-        let head = self.bolt.collect_response();
-        let body = self.bolt.collect_response();
+    pub fn run(&mut self, statement: &str, parameters: HashMap<&str, Value>) -> Cursor {
+        self.raw.pack_run(statement, parameters);
+        self.raw.pack_pull_all();
+        let head = self.raw.collect_response();
+        let body = self.raw.collect_response();
         Cursor { head: head, body: body }
     }
 
-    fn send(&mut self) {
-        self.bolt.send();
+    pub fn send(&mut self) {
+        self.raw.send();
     }
 
-    fn fetch_header(&mut self, cursor: Cursor) -> Option<BoltSummary> {
-        let summary = self.bolt.fetch_summary(cursor.head);
-        let _ = writeln!(stderr(), "HEADER {:?}", summary);
-        self.bolt.compact_responses();
+    /// Fetch the result header summary
+    pub fn fetch_header(&mut self, cursor: Cursor) -> Option<BoltSummary> {
+        let summary = self.raw.fetch_summary(cursor.head);
+        info!("HEADER {:?}", summary);
+        self.raw.compact_responses();
         match summary {
             Some(BoltSummary::Ignored(_)) => panic!("RUN was IGNORED"),
             Some(BoltSummary::Failure(_)) => {
-                self.bolt.pack_ack_failure();
-                self.bolt.ignore_response();
-                self.bolt.send();
+                self.raw.pack_ack_failure();
+                self.raw.ignore_response();
+                self.raw.send();
             },
             _ => (),
         };
         summary
     }
 
-    fn fetch_detail(&mut self, cursor: Cursor) -> Option<BoltDetail> {
-        self.bolt.fetch_detail(cursor.body)
+    /// Fetch the result detail
+    pub fn fetch_detail(&mut self, cursor: Cursor) -> Option<BoltDetail> {
+        self.raw.fetch_detail(cursor.body)
     }
 
-    fn fetch_footer(&mut self, cursor: Cursor) -> Option<BoltSummary> {
-        let summary = self.bolt.fetch_summary(cursor.body);
-        let _ = writeln!(stderr(), "FOOTER {:?}", summary);
-        self.bolt.compact_responses();
+    /// Fetch the result footer summary
+    pub fn fetch_footer(&mut self, cursor: Cursor) -> Option<BoltSummary> {
+        let summary = self.raw.fetch_summary(cursor.body);
+        info!("FOOTER {:?}", summary);
+        self.raw.compact_responses();
         match summary {
             Some(BoltSummary::Failure(_)) => {
-                self.bolt.pack_ack_failure();
-                self.bolt.ignore_response();
-                self.bolt.send();
+                self.raw.pack_ack_failure();
+                self.raw.ignore_response();
+                self.raw.send();
             },
             _ => (),
         };
