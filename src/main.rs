@@ -23,7 +23,7 @@ impl log::Log for SimpleLogger {
 
 #[macro_use]
 extern crate boltstream;
-use boltstream::{BoltStream, BoltDetail, BoltSummary};
+use boltstream::{CypherStream, BoltDetail, BoltSummary};
 
 extern crate packstream;
 use packstream::Value;
@@ -46,16 +46,16 @@ fn main() {
     let address = "[::1]:7687";
     let user = "neo4j";
     let password = "password";
-    let mut bolt = BoltStream::connect(address, user, password).unwrap();
+    let mut cypher = CypherStream::connect(address, user, password).unwrap();
 
     // begin transaction
-    bolt.begin_transaction(None);
+    cypher.begin_transaction(None);
 
     // execute statement
-    let cursor = bolt.run(&statement[..], parameters);
-    bolt.send();
+    let cursor = cypher.run(&statement[..], parameters);
+    cypher.send();
 
-    match bolt.fetch_header(cursor) {
+    match cypher.fetch_header(cursor) {
         Some(header) => match header {
             BoltSummary::Success(ref values) => match values[0] {
                 Value::Map(ref map) => println!("{}", map.get("fields").unwrap()),
@@ -67,20 +67,20 @@ fn main() {
     }
 
     // iterate result
-    let mut sleeve: Option<BoltDetail> = bolt.fetch_detail(cursor);
+    let mut sleeve: Option<BoltDetail> = cypher.fetch_detail(cursor);
     while sleeve.is_some() {
         match sleeve {
             Some(ref record) => println!("{}", record),
             _ => (),
         }
-        sleeve = bolt.fetch_detail(cursor);
+        sleeve = cypher.fetch_detail(cursor);
     }
 
     // close result
-    let _ = bolt.fetch_footer(cursor);
+    let _ = cypher.fetch_footer(cursor);
 
     // commit transaction
-    let commit_result = bolt.commit_transaction();
+    let commit_result = cypher.commit_transaction();
     let _ = commit_result.bookmark();
 
 }

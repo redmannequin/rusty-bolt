@@ -44,7 +44,7 @@ impl Error for BoltError {
     }
 }
 
-struct RawBoltStream {
+struct BoltStream {
     stream: TcpStream,
     packer: Packer,
     end_of_request_markers: VecDeque<usize>,
@@ -55,8 +55,8 @@ struct RawBoltStream {
     protocol_version: u32,
 }
 
-impl RawBoltStream {
-    pub fn connect<A: ToSocketAddrs>(address: A) -> Result<RawBoltStream, BoltError> {
+impl BoltStream {
+    pub fn connect<A: ToSocketAddrs>(address: A) -> Result<BoltStream, BoltError> {
         match TcpStream::connect(address) {
             Ok(mut stream) => match stream.write(&HANDSHAKE) {
                 Ok(_) => {
@@ -68,7 +68,7 @@ impl RawBoltStream {
                                                         (buf[2] as u32) << 8 |
                                                         (buf[3] as u32);
                             //info!("S: <VERSION {}>", version)
-                            Ok(RawBoltStream {
+                            Ok(BoltStream {
                                 stream: stream,
                                 packer: Packer::new(),
                                 end_of_request_markers: VecDeque::new(),
@@ -382,14 +382,14 @@ macro_rules! parameters(
     };
 );
 
-pub struct BoltStream {
-    raw: RawBoltStream,
+pub struct CypherStream {
+    raw: BoltStream,
     server_version: Option<String>,
 }
-impl BoltStream {
-    pub fn connect(address: &str, user: &str, password: &str) -> Result<BoltStream, BoltError> {
+impl CypherStream {
+    pub fn connect(address: &str, user: &str, password: &str) -> Result<CypherStream, BoltError> {
         info!("Connecting to bolt://{} as {}", address, user);
-        match RawBoltStream::connect(address) {
+        match BoltStream::connect(address) {
             Ok(mut raw) => {
                 raw.pack_init(user, password);
                 let init = raw.collect_response();
@@ -411,7 +411,7 @@ impl BoltStream {
                 };
 
                 info!("Connected to server version {:?}", server_version);
-                Ok(BoltStream {
+                Ok(CypherStream {
                     raw: raw,
                     server_version: server_version,
                 })
