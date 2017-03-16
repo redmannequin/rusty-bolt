@@ -30,7 +30,7 @@ use boltstream::{BoltSummary};
 
 #[macro_use]
 extern crate packstream;
-use packstream::{Value, ValueCollection};
+use packstream::{Data};
 
 fn main() {
     let mut args = env::args();
@@ -56,32 +56,29 @@ fn main() {
     cypher.begin_transaction(None);
 
     // execute statement
-    let cursor = cypher.run(&statement[..], parameters);
+    let result = cypher.run(&statement[..], parameters);
     cypher.send();
 
-    match cypher.fetch_header(cursor) {
+    match cypher.fetch_header(result) {
         Some(header) => match header {
-            BoltSummary::Success(ref values) => match values[0] {
-                Value::Map(ref map) => println!("{}", map.get("fields").unwrap()),
-                _ => panic!("Failed! Not a map."),
-            },
+            BoltSummary::Success(ref metadata) => println!("{}", metadata.get("fields").unwrap()),
             _ => panic!("Failed! Not successful."),
         },
         _ => panic!("Failed! No header summary"),
     }
 
     // iterate result
-    let mut sleeve: Option<ValueCollection> = cypher.fetch_detail(cursor);
+    let mut sleeve: Option<Data> = cypher.fetch_data(result);
     while sleeve.is_some() {
         match sleeve {
-            Some(ref record) => println!("{}", record),
+            Some(ref data) => println!("{}", data),
             _ => (),
         }
-        sleeve = cypher.fetch_detail(cursor);
+        sleeve = cypher.fetch_data(result);
     }
 
     // close result
-    let _ = cypher.fetch_footer(cursor);
+    let _ = cypher.fetch_footer(result);
 
     // commit transaction
     let commit_result = cypher.commit_transaction();

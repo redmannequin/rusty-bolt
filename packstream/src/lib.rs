@@ -221,20 +221,20 @@ impl ValueMatch for Value {
 
 }
 
-pub enum ValueCollection {
+pub enum Data {
     Record(Vec<Value>),
 }
-impl fmt::Debug for ValueCollection {
+impl fmt::Debug for Data {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            ValueCollection::Record(ref values) => write!(f, "Record({:?})", values),
+            Data::Record(ref values) => write!(f, "Record({:?})", values),
         }
     }
 }
-impl fmt::Display for ValueCollection {
+impl fmt::Display for Data {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            ValueCollection::Record(ref fields) => match fields.len() {
+            Data::Record(ref fields) => match fields.len() {
                 0 => write!(f, ""),
                 _ => match fields[0] {
                     Value::List(ref values) => write_tsv(f, values),

@@ -8,32 +8,29 @@ use boltstream::{BoltStream, BoltSummary, BoltError};
 
 #[macro_use]
 extern crate packstream;
-use packstream::{Value, ValueCollection};
+use packstream::{Value, Data};
 
 const USER_AGENT: &'static str = "rusty-bolt/0.1.0";
 
 pub struct CypherStream {
-    raw: BoltStream,
+    bolt: BoltStream,
     server_version: Option<String>,
 }
 impl CypherStream {
     pub fn connect(address: &str, user: &str, password: &str) -> Result<CypherStream, BoltError> {
         info!("Connecting to bolt://{} as {}", address, user);
         match BoltStream::connect(address) {
-            Ok(mut raw) => {
-                raw.pack_init(USER_AGENT, user, password);
-                let init = raw.collect_response();
-                raw.send();
-                let init_summary = raw.fetch_summary(init);
+            Ok(mut bolt) => {
+                bolt.pack_init(USER_AGENT, user, password);
+                let init = bolt.collect_response();
+                bolt.send();
+                let init_summary = bolt.fetch_summary(init);
                 let summary = init_summary.unwrap();
-                raw.compact_responses();
+                bolt.compact_responses();
 
                 let server_version = match summary {
-                    BoltSummary::Success(ref fields) => match fields.get(0) {
-                        Some(&Value::Map(ref metadata)) => match metadata.get("server") {
-                            Some(&Value::String(ref string)) => Some(string.clone()),
-                            _ => None,
-                        },
+                    BoltSummary::Success(ref metadata) => match metadata.get("server") {
+                        Some(&Value::String(ref string)) => Some(string.clone()),
                         _ => None,
                     },
                     BoltSummary::Ignored(_) => panic!("Protocol violation! INIT should not be IGNORED"),
@@ -42,7 +39,7 @@ impl CypherStream {
 
                 info!("Connected to server version {:?}", server_version);
                 Ok(CypherStream {
-                    raw: raw,
+                    bolt: bolt,
                     server_version: server_version,
                 })
             },
@@ -51,7 +48,7 @@ impl CypherStream {
     }
 
     pub fn protocol_version(&self) -> u32 {
-        self.raw.protocol_version()
+        self.bolt.protocol_version()
     }
 
     pub fn server_version(&self) -> &str {
@@ -63,30 +60,27 @@ impl CypherStream {
 
     pub fn begin_transaction(&mut self, bookmark: Option<String>) {
         info!("BEGIN {:?}->|...|", bookmark);
-        self.raw.pack_run("BEGIN", match bookmark {
+        self.bolt.pack_run("BEGIN", match bookmark {
             Some(string) => parameters!("bookmark" => string),
             _ => parameters!(),
         });
-        self.raw.pack_discard_all();
-        self.raw.ignore_response();
-        self.raw.ignore_response();
+        self.bolt.pack_discard_all();
+        self.bolt.ignore_response();
+        self.bolt.ignore_response();
     }
 
     pub fn commit_transaction(&mut self) -> CommitResult {
-        self.raw.pack_run("COMMIT", parameters!());
-        self.raw.pack_discard_all();
-        self.raw.ignore_response();
-        let body = self.raw.collect_response();
-        self.raw.send();
-        let summary = self.raw.fetch_summary(body);
-        self.raw.compact_responses();
+        self.bolt.pack_run("COMMIT", parameters!());
+        self.bolt.pack_discard_all();
+        self.bolt.ignore_response();
+        let body = self.bolt.collect_response();
+        self.bolt.send();
+        let summary = self.bolt.fetch_summary(body);
+        self.bolt.compact_responses();
 
         let bookmark: Option<String> = match summary {
-            Some(BoltSummary::Success(ref fields)) => match fields.get(0) {
-                Some(&Value::Map(ref metadata)) => match metadata.get("bookmark") {
-                    Some(&Value::String(ref bookmark)) => Some(bookmark.clone()),
-                    _ => None,
-                },
+            Some(BoltSummary::Success(ref metadata)) => match metadata.get("bookmark") {
+                Some(&Value::String(ref bookmark)) => Some(bookmark.clone()),
                 _ => None,
             },
             _ => None,
@@ -97,46 +91,46 @@ impl CypherStream {
     }
 
     pub fn rollback_transaction(&mut self) {
-        self.raw.pack_run("ROLLBACK", parameters!());
-        self.raw.pack_discard_all();
-        self.raw.ignore_response();
-        let body = self.raw.collect_response();
-        self.raw.send();
-        self.raw.fetch_summary(body);
-        self.raw.compact_responses();
+        self.bolt.pack_run("ROLLBACK", parameters!());
+        self.bolt.pack_discard_all();
+        self.bolt.ignore_response();
+        let body = self.bolt.collect_response();
+        self.bolt.send();
+        self.bolt.fetch_summary(body);
+        self.bolt.compact_responses();
     }
 
     pub fn reset(&mut self) {
-        self.raw.pack_reset();
-        let reset = self.raw.collect_response();
-        self.raw.send();
-        self.raw.fetch_summary(reset);
-        self.raw.compact_responses();
+        self.bolt.pack_reset();
+        let reset = self.bolt.collect_response();
+        self.bolt.send();
+        self.bolt.fetch_summary(reset);
+        self.bolt.compact_responses();
     }
 
-    pub fn run(&mut self, statement: &str, parameters: HashMap<&str, Value>) -> Cursor {
-        self.raw.pack_run(statement, parameters);
-        self.raw.pack_pull_all();
-        let head = self.raw.collect_response();
-        let body = self.raw.collect_response();
-        Cursor { head: head, body: body }
+    pub fn run(&mut self, statement: &str, parameters: HashMap<&str, Value>) -> StatementResult {
+        self.bolt.pack_run(statement, parameters);
+        self.bolt.pack_pull_all();
+        let head = self.bolt.collect_response();
+        let body = self.bolt.collect_response();
+        StatementResult { head: head, body: body }
     }
 
     pub fn send(&mut self) {
-        self.raw.send();
+        self.bolt.send();
     }
 
     /// Fetch the result header summary
-    pub fn fetch_header(&mut self, cursor: Cursor) -> Option<BoltSummary> {
-        let summary = self.raw.fetch_summary(cursor.head);
+    pub fn fetch_header(&mut self, result: StatementResult) -> Option<BoltSummary> {
+        let summary = self.bolt.fetch_summary(result.head);
         info!("HEADER {:?}", summary);
-        self.raw.compact_responses();
+        self.bolt.compact_responses();
         match summary {
             Some(BoltSummary::Ignored(_)) => panic!("RUN was IGNORED"),
             Some(BoltSummary::Failure(_)) => {
-                self.raw.pack_ack_failure();
-                self.raw.ignore_response();
-                self.raw.send();
+                self.bolt.pack_ack_failure();
+                self.bolt.ignore_response();
+                self.bolt.send();
             },
             _ => (),
         };
@@ -144,20 +138,20 @@ impl CypherStream {
     }
 
     /// Fetch the result detail
-    pub fn fetch_detail(&mut self, cursor: Cursor) -> Option<ValueCollection> {
-        self.raw.fetch_detail(cursor.body)
+    pub fn fetch_data(&mut self, result: StatementResult) -> Option<Data> {
+        self.bolt.fetch_detail(result.body)
     }
 
     /// Fetch the result footer summary
-    pub fn fetch_footer(&mut self, cursor: Cursor) -> Option<BoltSummary> {
-        let summary = self.raw.fetch_summary(cursor.body);
+    pub fn fetch_footer(&mut self, result: StatementResult) -> Option<BoltSummary> {
+        let summary = self.bolt.fetch_summary(result.body);
         info!("FOOTER {:?}", summary);
-        self.raw.compact_responses();
+        self.bolt.compact_responses();
         match summary {
             Some(BoltSummary::Failure(_)) => {
-                self.raw.pack_ack_failure();
-                self.raw.ignore_response();
-                self.raw.send();
+                self.bolt.pack_ack_failure();
+                self.bolt.ignore_response();
+                self.bolt.send();
             },
             _ => (),
         };
@@ -166,7 +160,7 @@ impl CypherStream {
 }
 
 #[derive(Copy, Clone)]
-pub struct Cursor {
+pub struct StatementResult {
     head: usize,
     body: usize,
 }

@@ -3,13 +3,12 @@ extern crate log;
 
 use std::error::Error;
 use std::fmt;
-use std::vec::Vec;
 use std::collections::{HashMap, VecDeque};
 use std::io::prelude::*;
 use std::net::{TcpStream, ToSocketAddrs};
 
 extern crate packstream;
-use packstream::{Value, ValueCollection, Packer, Unpacker};
+use packstream::{Value, Data, Packer, Unpacker};
 
 const HANDSHAKE: [u8; 20] = [0x60, 0x60, 0xB0, 0x17,
                              0x00, 0x00, 0x00, 0x01,
@@ -209,13 +208,13 @@ impl BoltStream {
     /// Fetches the next response message for the designated response,
     /// assuming that response is not already completely buffered.
     ///
-    pub fn fetch_detail(&mut self, response_id: usize) -> Option<ValueCollection> {
+    pub fn fetch_detail(&mut self, response_id: usize) -> Option<Data> {
         let response_index = response_id - self.responses_done;
         while self.current_response_index < response_index {
-            self.read_message();
+            self.fetch();
         }
         if self.current_response_index == response_index {
-            self.read_message();
+            self.fetch();
         }
         self.responses[response_index].detail.pop_front()
     }
@@ -226,7 +225,7 @@ impl BoltStream {
     pub fn fetch_summary(&mut self, response_id: usize) -> Option<BoltSummary> {
         let response_index = response_id - self.responses_done;
         while self.current_response_index <= response_index {
-            self.read_message();
+            self.fetch();
         }
         let ref mut response = self.responses[response_index];
         response.done = true;
@@ -235,46 +234,72 @@ impl BoltStream {
 
     /// Reads the next message from the stream into the read buffer.
     ///
-    fn read_message(&mut self) -> u8 {
+    fn fetch(&mut self) {
         self.unpacker.clear();
         let mut chunk_size: usize = self.read_chunk_size();
         while chunk_size > 0 {
             let _ = self.stream.read_exact(&mut self.unpacker.buffer(chunk_size));
             chunk_size = self.read_chunk_size();
         }
-
-        let message: Value = self.unpacker.unpack();
-        match message {
-            Value::Structure { signature, fields } => {
-                match signature {
-                    0x70 => {
-                        //info!("S: SUCCESS {:?}", fields[0]);
-                        let mut response = self.responses.get_mut(self.current_response_index).unwrap();
-                        response.summary = Some(BoltSummary::Success(fields));
-                        self.current_response_index += 1;
-                    },
-                    0x71 => {
-                        //info!("S: RECORD {:?}", fields[0]);
-                        let mut response = self.responses.get_mut(self.current_response_index).unwrap();
-                        response.detail.push_back(ValueCollection::Record(fields));
-                    },
-                    0x7E => {
-                        //info!("S: IGNORED {:?}", fields[0]);
-                        let mut response = self.responses.get_mut(self.current_response_index).unwrap();
-                        response.summary = Some(BoltSummary::Ignored(fields));
-                        self.current_response_index += 1;
-                    },
-                    0x7F => {
-                        //info!("S: FAILURE {:?}", fields[0]);
-                        {
-                            let mut response = self.responses.get_mut(self.current_response_index).unwrap();
-                            response.summary = Some(BoltSummary::Failure(fields));
+        match self.unpacker.unpack() {
+            Value::Structure { signature, mut fields } => match signature {
+                0x70 => {
+                    let mut response = self.responses.get_mut(self.current_response_index).unwrap();
+                    self.current_response_index += 1;
+                    match fields.len() {
+                        0 => {
+                            debug!("S: SUCCESS {{}}");
+                            response.summary = Some(BoltSummary::Success(HashMap::new()));
+                        },
+                        _ => match fields.remove(0) {
+                            Value::Map(metadata) => {
+                                debug!("S: SUCCESS {:?}", metadata);
+                                response.summary = Some(BoltSummary::Success(metadata));
+                            },
+                            _ => panic!("Non-map metadata")
                         }
-                        self.current_response_index += 1;
-                    },
-                    _ => panic!("Unknown response message with signature {:02X}", signature),
-                }
-                return signature;
+                    }
+                },
+                0x71 => {
+                    let mut response = self.responses.get_mut(self.current_response_index).unwrap();
+                    debug!("S: RECORD {:?}", fields[0]);
+                    response.detail.push_back(Data::Record(fields));
+                },
+                0x7E => {
+                    let mut response = self.responses.get_mut(self.current_response_index).unwrap();
+                    self.current_response_index += 1;
+                    match fields.len() {
+                        0 => {
+                            debug!("S: IGNORED {{}}");
+                            response.summary = Some(BoltSummary::Ignored(HashMap::new()));
+                        },
+                        _ => match fields.remove(0) {
+                            Value::Map(metadata) => {
+                                debug!("S: IGNORED {:?}", metadata);
+                                response.summary = Some(BoltSummary::Ignored(metadata));
+                            },
+                            _ => panic!("Non-map metadata")
+                        }
+                    }
+                },
+                0x7F => {
+                    let mut response = self.responses.get_mut(self.current_response_index).unwrap();
+                    self.current_response_index += 1;
+                    match fields.len() {
+                        0 => {
+                            debug!("S: FAILURE {{}}");
+                            response.summary = Some(BoltSummary::Failure(HashMap::new()));
+                        },
+                        _ => match fields.remove(0) {
+                            Value::Map(metadata) => {
+                                debug!("S: FAILURE {:?}", metadata);
+                                response.summary = Some(BoltSummary::Failure(metadata));
+                            },
+                            _ => panic!("Non-map metadata")
+                        }
+                    }
+                },
+                _ => panic!("Unknown response message with signature {:02X}", signature),
             },
             _ => panic!("Response message is not a structure"),
         }
@@ -290,9 +315,9 @@ impl BoltStream {
 }
 
 pub enum BoltSummary {
-    Success(Vec<Value>),
-    Ignored(Vec<Value>),
-    Failure(Vec<Value>),
+    Success(HashMap<String, Value>),
+    Ignored(HashMap<String, Value>),
+    Failure(HashMap<String, Value>),
 }
 impl fmt::Debug for BoltSummary {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -305,7 +330,7 @@ impl fmt::Debug for BoltSummary {
 }
 
 pub struct BoltResponse {
-    detail: VecDeque<ValueCollection>,
+    detail: VecDeque<Data>,
     summary: Option<BoltSummary>,
     done: bool,
 }
