@@ -5,6 +5,7 @@ use std::error::Error;
 use std::fmt;
 use std::collections::{HashMap, VecDeque};
 use std::io::prelude::*;
+use std::result;
 use std::net::{TcpStream, ToSocketAddrs};
 
 extern crate packstream;
@@ -54,8 +55,10 @@ pub struct BoltStream {
     protocol_version: u32,
 }
 
+pub type Result<T> = result::Result<T, BoltError>;
+
 impl BoltStream {
-    pub fn connect<A: ToSocketAddrs>(address: A) -> Result<BoltStream, BoltError> {
+    pub fn connect<A: ToSocketAddrs>(address: A) -> Result<BoltStream> {
         match TcpStream::connect(address) {
             Ok(mut stream) => match stream.write(&HANDSHAKE) {
                 Ok(_) => {
@@ -208,7 +211,7 @@ impl BoltStream {
     /// Fetches the next response message for the designated response,
     /// assuming that response is not already completely buffered.
     ///
-    pub fn fetch_detail(&mut self, response_id: usize) -> Option<Data> {
+    pub fn fetch_detail(&mut self, response_id: usize, into: &mut VecDeque<Data>) -> usize {
         let response_index = response_id - self.responses_done;
         while self.current_response_index < response_index {
             self.fetch();
@@ -216,7 +219,13 @@ impl BoltStream {
         if self.current_response_index == response_index {
             self.fetch();
         }
-        self.responses[response_index].detail.pop_front()
+        match self.responses[response_index].detail.pop_front() {
+            Some(data) => {
+                into.push_back(data);
+                1
+            },
+            _ => 0,
+        }
     }
 
     /// Fetches all response messages for the designated response,

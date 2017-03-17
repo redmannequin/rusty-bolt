@@ -1,5 +1,6 @@
 //use std::io::{stderr, Write};
 use std::env;
+use std::collections::VecDeque;
 
 //#[macro_use]
 //extern crate log;
@@ -25,6 +26,7 @@ use std::env;
 extern crate cypherstream;
 use cypherstream::{CypherStream};
 
+#[macro_use]
 extern crate boltstream;
 use boltstream::{BoltSummary};
 
@@ -68,13 +70,11 @@ fn main() {
     }
 
     // iterate result
-    let mut sleeve: Option<Data> = cypher.fetch_data(result);
-    while sleeve.is_some() {
-        match sleeve {
-            Some(ref data) => println!("{}", data),
-            _ => (),
+    let mut data_stream: VecDeque<Data> = VecDeque::new();
+    while cypher.fetch_data(result, &mut data_stream) > 0 {
+        for data in data_stream.drain(..) {
+            println!("{}", data);
         }
-        sleeve = cypher.fetch_data(result);
     }
 
     // close result

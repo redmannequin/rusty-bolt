@@ -1,10 +1,10 @@
 #[macro_use]
 extern crate log;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 extern crate boltstream;
-use boltstream::{BoltStream, BoltSummary, BoltError};
+use boltstream::{BoltStream, BoltSummary};
 
 #[macro_use]
 extern crate packstream;
@@ -12,12 +12,14 @@ use packstream::{Value, Data};
 
 const USER_AGENT: &'static str = "rusty-bolt/0.1.0";
 
+pub type Result<T> = boltstream::Result<T>;
+
 pub struct CypherStream {
     bolt: BoltStream,
     server_version: Option<String>,
 }
 impl CypherStream {
-    pub fn connect(address: &str, user: &str, password: &str) -> Result<CypherStream, BoltError> {
+    pub fn connect(address: &str, user: &str, password: &str) -> self::Result<CypherStream> {
         info!("Connecting to bolt://{} as {}", address, user);
         match BoltStream::connect(address) {
             Ok(mut bolt) => {
@@ -138,8 +140,8 @@ impl CypherStream {
     }
 
     /// Fetch the result detail
-    pub fn fetch_data(&mut self, result: StatementResult) -> Option<Data> {
-        self.bolt.fetch_detail(result.body)
+    pub fn fetch_data(&mut self, result: StatementResult, into: &mut VecDeque<Data>) -> usize {
+        self.bolt.fetch_detail(result.body, into)
     }
 
     /// Fetch the result footer summary
