@@ -1,23 +1,23 @@
-use std::io::{stderr, Write};
+//use std::io::{stderr, Write};
 use std::env;
 
-#[macro_use]
-extern crate log;
-use log::{LogRecord, LogLevel, LogMetadata};
+//#[macro_use]
+//extern crate log;
+//use log::{LogRecord, LogLevel, LogMetadata};
 
-struct SimpleLogger;
-
-impl log::Log for SimpleLogger {
-    fn enabled(&self, metadata: &LogMetadata) -> bool {
-        metadata.level() <= LogLevel::Debug
-    }
-
-    fn log(&self, record: &LogRecord) {
-        if self.enabled(record.metadata()) {
-            let _ = writeln!(stderr(), "[{}]  {}", record.level(), record.args());
-        }
-    }
-}
+//struct SimpleLogger;
+//
+//impl log::Log for SimpleLogger {
+//    fn enabled(&self, metadata: &LogMetadata) -> bool {
+//        metadata.level() <= LogLevel::Debug
+//    }
+//
+//    fn log(&self, record: &LogRecord) {
+//        if self.enabled(record.metadata()) {
+//            let _ = writeln!(stderr(), "[{}]  {}", record.level(), record.args());
+//        }
+//    }
+//}
 
 //////////////////////////////////////////////////////////////////////
 
@@ -41,10 +41,10 @@ fn main() {
     };
     let parameters = parameters!();
 
-    let _ = log::set_logger(|max_log_level| {
-        max_log_level.set(log::LogLevelFilter::Debug);
-        Box::new(SimpleLogger)
-    });
+//    let _ = log::set_logger(|max_log_level| {
+//        max_log_level.set(log::LogLevelFilter::Debug);
+//        Box::new(SimpleLogger)
+//    });
 
     // connect
     let address = "[::1]:7687";

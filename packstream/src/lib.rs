@@ -234,13 +234,7 @@ impl fmt::Debug for Data {
 impl fmt::Display for Data {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Data::Record(ref fields) => match fields.len() {
-                0 => write!(f, ""),
-                _ => match fields[0] {
-                    Value::List(ref values) => write_tsv(f, values),
-                    _ => write!(f, ""),
-                },
-            },
+            Data::Record(ref data) => write_tsv(f, data),
         }
     }
 }

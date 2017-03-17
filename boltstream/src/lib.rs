@@ -232,19 +232,30 @@ impl BoltStream {
         response.summary.take()
     }
 
-    /// Reads the next message from the stream into the read buffer.
-    ///
-    fn fetch(&mut self) {
+    fn receive(&mut self) {
         self.unpacker.clear();
         let mut chunk_size: usize = self.read_chunk_size();
         while chunk_size > 0 {
             let _ = self.stream.read_exact(&mut self.unpacker.buffer(chunk_size));
             chunk_size = self.read_chunk_size();
         }
+    }
+
+    fn read_chunk_size(&mut self) -> usize {
+        let mut chunk_header = &mut [0u8; 2];
+        let _ = self.stream.read_exact(chunk_header);
+//        log_line!("S: [{:02X} {:02X}]", chunk_header[0] as u8, chunk_header[1] as u8);
+        0x100 * chunk_header[0] as usize + chunk_header[1] as usize
+    }
+
+    /// Reads the next message from the stream into the read buffer.
+    ///
+    fn fetch(&mut self) {
+        self.receive();
+        let mut response = self.responses.get_mut(self.current_response_index).unwrap();
         match self.unpacker.unpack() {
             Value::Structure { signature, mut fields } => match signature {
                 0x70 => {
-                    let mut response = self.responses.get_mut(self.current_response_index).unwrap();
                     self.current_response_index += 1;
                     match fields.len() {
                         0 => {
@@ -256,17 +267,26 @@ impl BoltStream {
                                 debug!("S: SUCCESS {:?}", metadata);
                                 response.summary = Some(BoltSummary::Success(metadata));
                             },
-                            _ => panic!("Non-map metadata")
-                        }
+                            _ => panic!("Non-map metadata"),
+                        },
                     }
                 },
                 0x71 => {
-                    let mut response = self.responses.get_mut(self.current_response_index).unwrap();
-                    debug!("S: RECORD {:?}", fields[0]);
-                    response.detail.push_back(Data::Record(fields));
+                    match fields.len() {
+                        0 => {
+                            debug!("S: RECORD {{}}");
+                            response.detail.push_back(Data::Record(Vec::new()));
+                        },
+                        _ => match fields.remove(0) {
+                            Value::List(data) => {
+                                debug!("S: RECORD {:?}", data);
+                                response.detail.push_back(Data::Record(data));
+                            },
+                            _ => panic!("Non-list data"),
+                        },
+                    }
                 },
                 0x7E => {
-                    let mut response = self.responses.get_mut(self.current_response_index).unwrap();
                     self.current_response_index += 1;
                     match fields.len() {
                         0 => {
@@ -278,12 +298,11 @@ impl BoltStream {
                                 debug!("S: IGNORED {:?}", metadata);
                                 response.summary = Some(BoltSummary::Ignored(metadata));
                             },
-                            _ => panic!("Non-map metadata")
-                        }
+                            _ => panic!("Non-map metadata"),
+                        },
                     }
                 },
                 0x7F => {
-                    let mut response = self.responses.get_mut(self.current_response_index).unwrap();
                     self.current_response_index += 1;
                     match fields.len() {
                         0 => {
@@ -295,21 +314,14 @@ impl BoltStream {
                                 debug!("S: FAILURE {:?}", metadata);
                                 response.summary = Some(BoltSummary::Failure(metadata));
                             },
-                            _ => panic!("Non-map metadata")
-                        }
+                            _ => panic!("Non-map metadata"),
+                        },
                     }
                 },
                 _ => panic!("Unknown response message with signature {:02X}", signature),
             },
             _ => panic!("Response message is not a structure"),
         }
-    }
-
-    fn read_chunk_size(&mut self) -> usize {
-        let mut chunk_header = &mut [0u8; 2];
-        let _ = self.stream.read_exact(chunk_header);
-//        log_line!("S: [{:02X} {:02X}]", chunk_header[0] as u8, chunk_header[1] as u8);
-        0x100 * chunk_header[0] as usize + chunk_header[1] as usize
     }
 
 }
