@@ -17,6 +17,7 @@ pub type Result<T> = boltstream::Result<T>;
 pub struct CypherStream {
     bolt: BoltStream,
     server_version: Option<String>,
+    bookmark: Option<String>,
 }
 impl CypherStream {
     pub fn connect(address: &str, user: &str, password: &str) -> self::Result<CypherStream> {
@@ -43,6 +44,7 @@ impl CypherStream {
                 Ok(CypherStream {
                     bolt: bolt,
                     server_version: server_version,
+                    bookmark: None,
                 })
             },
             Err(e) => Err(e)
@@ -60,6 +62,13 @@ impl CypherStream {
         }
     }
 
+    pub fn last_bookmark(&self) -> &str {
+        match self.bookmark {
+            Some(ref bookmark) => &bookmark[..],
+            None => "",
+        }
+    }
+
     pub fn begin_transaction(&mut self, bookmark: Option<String>) {
         info!("BEGIN {:?}->|...|", bookmark);
         self.bolt.pack_run("BEGIN", match bookmark {
@@ -71,7 +80,7 @@ impl CypherStream {
         self.bolt.ignore_response();
     }
 
-    pub fn commit_transaction(&mut self) -> CommitResult {
+    pub fn commit_transaction(&mut self) {
         self.bolt.pack_run("COMMIT", parameters!());
         self.bolt.pack_discard_all();
         self.bolt.ignore_response();
@@ -89,7 +98,7 @@ impl CypherStream {
         };
 
         info!("COMMIT |...|->{:?}", bookmark);
-        CommitResult { bookmark: bookmark }
+        self.bookmark = bookmark;
     }
 
     pub fn rollback_transaction(&mut self) {
@@ -115,16 +124,23 @@ impl CypherStream {
         self.bolt.pack_pull_all();
         let head = self.bolt.collect_response();
         let body = self.bolt.collect_response();
-        StatementResult { head: head, body: body }
+        self.send();
+        match self.fetch_header(head) {
+            Some(header) => match header {
+                BoltSummary::Success(metadata) => StatementResult { header: metadata, body: body },
+                _ => panic!("Failed! Not successful."),
+            },
+            _ => panic!("Failed! No header summary"),
+        }
     }
 
-    pub fn send(&mut self) {
+    fn send(&mut self) {
         self.bolt.send();
     }
 
-    /// Fetch the result header summary
-    pub fn fetch_header(&mut self, result: StatementResult) -> Option<BoltSummary> {
-        let summary = self.bolt.fetch_summary(result.head);
+    /// Fetch the RUN summary
+    fn fetch_header(&mut self, response_id: usize) -> Option<BoltSummary> {
+        let summary = self.bolt.fetch_summary(response_id);
         info!("HEADER {:?}", summary);
         self.bolt.compact_responses();
         match summary {
@@ -140,14 +156,14 @@ impl CypherStream {
     }
 
     /// Fetch the result detail
-    pub fn fetch_data(&mut self, result: StatementResult, into: &mut VecDeque<Data>) -> usize {
+    pub fn fetch(&mut self, result: &StatementResult, into: &mut VecDeque<Data>) -> usize {
         self.bolt.fetch_detail(result.body, into)
     }
 
-    /// Fetch the result footer summary
-    pub fn fetch_footer(&mut self, result: StatementResult) -> Option<BoltSummary> {
+    /// Fetch the result summary
+    pub fn fetch_summary(&mut self, result: StatementResult) -> Option<BoltSummary> {
         let summary = self.bolt.fetch_summary(result.body);
-        info!("FOOTER {:?}", summary);
+        info!("SUMMARY {:?}", summary);
         self.bolt.compact_responses();
         match summary {
             Some(BoltSummary::Failure(_)) => {
@@ -161,21 +177,14 @@ impl CypherStream {
     }
 }
 
-#[derive(Copy, Clone)]
+//#[derive(Copy, Clone)]
 pub struct StatementResult {
-    head: usize,
+    header: HashMap<String, Value>,
     body: usize,
 }
-
-pub struct CommitResult {
-    bookmark: Option<String>,
-}
-impl CommitResult {
-    pub fn bookmark(&self) -> Option<&str> {
-        match self.bookmark {
-            Some(ref bookmark) => Some(&bookmark[..]),
-            _ => None,
-        }
+impl StatementResult {
+    pub fn keys(&self) -> &Value {
+        self.header.get("fields").unwrap()
     }
 }
 

@@ -1,11 +1,11 @@
-//use std::io::{stderr, Write};
-use std::env;
-use std::collections::VecDeque;
+//////////////// LOGGING ///////////////////
 
+//use std::io::{stderr, Write};
+//
 //#[macro_use]
 //extern crate log;
 //use log::{LogRecord, LogLevel, LogMetadata};
-
+//
 //struct SimpleLogger;
 //
 //impl log::Log for SimpleLogger {
@@ -22,13 +22,12 @@ use std::collections::VecDeque;
 
 //////////////////////////////////////////////////////////////////////
 
+use std::env;
+use std::collections::VecDeque;
+
 #[macro_use]
 extern crate cypherstream;
 use cypherstream::{CypherStream};
-
-#[macro_use]
-extern crate boltstream;
-use boltstream::{BoltSummary};
 
 #[macro_use]
 extern crate packstream;
@@ -59,29 +58,21 @@ fn main() {
 
     // execute statement
     let result = cypher.run(&statement[..], parameters);
-    cypher.send();
-
-    match cypher.fetch_header(result) {
-        Some(header) => match header {
-            BoltSummary::Success(ref metadata) => println!("{}", metadata.get("fields").unwrap()),
-            _ => panic!("Failed! Not successful."),
-        },
-        _ => panic!("Failed! No header summary"),
-    }
+    println!("{}", result.keys());
 
     // iterate result
-    let mut data_stream: VecDeque<Data> = VecDeque::new();
-    while cypher.fetch_data(result, &mut data_stream) > 0 {
-        for data in data_stream.drain(..) {
-            println!("{}", data);
+    let mut records: VecDeque<Data> = VecDeque::new();
+    while cypher.fetch(&result, &mut records) > 0 {
+        for record in records.drain(..) {
+            println!("{}", record);
         }
     }
 
     // close result
-    let _ = cypher.fetch_footer(result);
+    let _ = cypher.fetch_summary(result);
 
     // commit transaction
-    let commit_result = cypher.commit_transaction();
-    let _ = commit_result.bookmark();
+    cypher.commit_transaction();
+    println!("({} records at bookmark {:?})", 0, cypher.last_bookmark());
 
 }
