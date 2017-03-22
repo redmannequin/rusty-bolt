@@ -1,15 +1,16 @@
 #[macro_use]
 extern crate log;
 
+use std::collections::{HashMap, VecDeque};
 use std::error::Error;
 use std::fmt;
-use std::collections::{HashMap, VecDeque};
 use std::io::prelude::*;
-use std::result;
 use std::net::{TcpStream, ToSocketAddrs};
+use std::result;
 
 extern crate packstream;
-use packstream::{Value, Data, Packer, Unpacker};
+use packstream::{Packer, Unpacker};
+use packstream::value::{Value, Data};
 
 const HANDSHAKE: [u8; 20] = [0x60, 0x60, 0xB0, 0x17,
                              0x00, 0x00, 0x00, 0x01,

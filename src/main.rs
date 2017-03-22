@@ -31,7 +31,7 @@ use cypherstream::{CypherStream};
 
 #[macro_use]
 extern crate packstream;
-use packstream::{Data, Value};
+use packstream::value::{Value, Data};
 
 fn main() {
     let mut args = env::args();

@@ -8,7 +8,7 @@ use boltstream::{BoltStream, BoltSummary};
 
 #[macro_use]
 extern crate packstream;
-use packstream::{Value, Data};
+use packstream::value::{Value, Data};
 
 const USER_AGENT: &'static str = "rusty-bolt/0.1.0";
 
