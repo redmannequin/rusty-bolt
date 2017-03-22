@@ -62,14 +62,19 @@ impl CypherStream {
         }
     }
 
-    pub fn last_bookmark(&self) -> &str {
-        match self.bookmark {
-            Some(ref bookmark) => &bookmark[..],
-            None => "",
-        }
+    pub fn bookmark(&self) -> &Option<String> {
+        &self.bookmark
     }
 
-    pub fn begin_transaction(&mut self, bookmark: Option<String>) {
+    pub fn set_bookmark(&mut self, bookmark: String) {
+        self.bookmark = Some(bookmark);
+    }
+
+    pub fn clear_bookmark(&mut self) {
+        self.bookmark = None;
+    }
+
+    pub fn begin_transaction(&mut self, bookmark: Option<&str>) {
         info!("BEGIN {:?}->|...|", bookmark);
         self.bolt.pack_run("BEGIN", match bookmark {
             Some(string) => parameters!("bookmark" => string),

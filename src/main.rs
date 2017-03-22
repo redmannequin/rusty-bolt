@@ -23,7 +23,7 @@
 //////////////////////////////////////////////////////////////////////
 
 use std::env;
-use std::collections::VecDeque;
+use std::collections::{VecDeque, HashMap};
 
 #[macro_use]
 extern crate cypherstream;
@@ -31,48 +31,48 @@ use cypherstream::{CypherStream};
 
 #[macro_use]
 extern crate packstream;
-use packstream::{Data};
+use packstream::{Data, Value};
 
 fn main() {
     let mut args = env::args();
 
     let statement = match args.nth(1) {
         Some(string) => string,
-        _ => String::from("UNWIND range(1, 10) AS n RETURN n, n * n AS n_sq, 'no ' + toString(n) AS n_str"),
+        _ => String::from("RETURN $x"),
     };
-    let parameters = parameters!();
+    let parameters = parameters!("x" => 1);
 
 //    let _ = log::set_logger(|max_log_level| {
 //        max_log_level.set(log::LogLevelFilter::Debug);
 //        Box::new(SimpleLogger)
 //    });
 
-    // connect
-    let address = "[::1]:7687";
-    let user = "neo4j";
-    let password = "password";
-    let mut cypher = CypherStream::connect(address, user, password).unwrap();
+    let cypher = CypherStream::connect("[::1]:7687", "neo4j", "password").unwrap();
+    run(cypher, &statement[..], parameters);
 
+}
+
+fn run(mut cypher: CypherStream, statement: &str, parameters: HashMap<&str, Value>) {
     // begin transaction
-    cypher.begin_transaction(None);
+//    cypher.begin_transaction(None);
 
     // execute statement
-    let result = cypher.run(&statement[..], parameters);
+    let result = cypher.run(statement, parameters);
     println!("{}", result.keys());
 
     // iterate result
+    let mut counter: usize = 0;
     let mut records: VecDeque<Data> = VecDeque::new();
     while cypher.fetch(&result, &mut records) > 0 {
         for record in records.drain(..) {
             println!("{}", record);
+            counter += 1;
         }
     }
-
-    // close result
     let _ = cypher.fetch_summary(result);
+    println!("({} record{})", counter, match counter { 1 => "", _ => "s" });
 
     // commit transaction
-    cypher.commit_transaction();
-    println!("({} records at bookmark {:?})", 0, cypher.last_bookmark());
+//    cypher.commit_transaction();
 
 }

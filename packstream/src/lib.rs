@@ -134,7 +134,7 @@ impl_ValueCast_to_List!(Vec<u32>);
 impl_ValueCast_to_List!(Vec<u64>);
 impl_ValueCast_to_List!(Vec<usize>);
 
-impl ValueCast for &'static str {
+impl<'t> ValueCast for &'t str {
     fn from(&self) -> Value {
         let mut s = String::with_capacity(self.len());
         s.push_str(&self);
