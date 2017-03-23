@@ -48,11 +48,11 @@ fn main() {
 //    });
 
     let cypher = CypherStream::connect("[::1]:7687", "neo4j", "password").unwrap();
-    run(cypher, &statement[..], parameters);
+    dump(cypher, &statement[..], parameters);
 
 }
 
-fn run(mut cypher: CypherStream, statement: &str, parameters: HashMap<&str, Value>) {
+fn dump(mut cypher: CypherStream, statement: &str, parameters: HashMap<&str, Value>) {
     // begin transaction
 //    cypher.begin_transaction(None);
 
