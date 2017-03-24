@@ -10,7 +10,7 @@ use std::result;
 
 extern crate packstream;
 use packstream::{Packer, Unpacker};
-use packstream::value::{Value, Data};
+use packstream::values::{Value, Data};
 
 const HANDSHAKE: [u8; 20] = [0x60, 0x60, 0xB0, 0x17,
                              0x00, 0x00, 0x00, 0x01,

@@ -251,7 +251,7 @@ macro_rules! parameters(
     { $($key:expr => $value:expr),* } => {
         {
             use std::collections::HashMap;
-            use $crate::value::{Value, ValueCast};
+            use $crate::values::{Value, ValueCast};
 
             let mut map : HashMap<&str, Value> = HashMap::new();
             $(

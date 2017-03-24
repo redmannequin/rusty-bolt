@@ -2,8 +2,8 @@ use std::ops::{Index, Range, RangeTo, RangeFrom, RangeFull};
 use std::vec::Vec;
 use std::collections::HashMap;
 
-pub mod value;
-use value::{Value};
+pub mod values;
+use values::{Value};
 
 pub struct Packer {
     buffer: Vec<u8>,

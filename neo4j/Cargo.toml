@@ -1,5 +1,5 @@
 [package]
-name = "cypherstream"
+name = "neo4j"
 version = "0.1.0"
 authors = ["Nigel Small <nigel@nigelsmall.name>"]
 
