@@ -69,7 +69,7 @@ fn dump(mut cypher: CypherStream, statement: &str, parameters: HashMap<&str, Val
             counter += 1;
         }
     }
-    let _ = cypher.fetch_summary(result);
+    let _ = cypher.fetch_summary(&result);
     println!("({} record{})", counter, match counter { 1 => "", _ => "s" });
 
     // commit transaction

@@ -166,7 +166,7 @@ impl CypherStream {
     }
 
     /// Fetch the result summary
-    pub fn fetch_summary(&mut self, result: StatementResult) -> Option<BoltSummary> {
+    pub fn fetch_summary(&mut self, result: &StatementResult) -> Option<BoltSummary> {
         let summary = self.bolt.fetch_summary(result.body);
         info!("SUMMARY {:?}", summary);
         self.bolt.compact_responses();
