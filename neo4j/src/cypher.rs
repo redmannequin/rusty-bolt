@@ -1,22 +1,21 @@
 use std::collections::{HashMap, VecDeque};
 
-extern crate boltstream;
-use boltstream::{BoltStream, BoltSummary};
+use bolt::{BoltStream, BoltSummary};
 
 extern crate packstream;
 use packstream::values::{Value, Data};
 
 const USER_AGENT: &'static str = "rusty-bolt/0.1.0";
 
-pub type Result<T> = boltstream::Result<T>;
+pub type Result<T> = ::bolt::Result<T>;
 
-pub struct Session {
+pub struct CypherStream {
     bolt: BoltStream,
     server_version: Option<String>,
     bookmark: Option<String>,
 }
-impl Session {
-    pub fn connect(address: &str, user: &str, password: &str) -> self::Result<Session> {
+impl CypherStream {
+    pub fn connect(address: &str, user: &str, password: &str) -> self::Result<CypherStream> {
         info!("Connecting to bolt://{} as {}", address, user);
         match BoltStream::connect(address) {
             Ok(mut bolt) => {
@@ -37,7 +36,7 @@ impl Session {
                 };
 
                 info!("Connected to server version {:?}", server_version);
-                Ok(Session {
+                Ok(CypherStream {
                     bolt: bolt,
                     server_version: server_version,
                     bookmark: None,

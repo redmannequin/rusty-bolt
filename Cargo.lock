@@ -2,17 +2,8 @@
 name = "rusty-bolt"
 version = "0.1.0"
 dependencies = [
- "boltstream 0.1.0",
  "log 0.3.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "neo4j 0.1.0",
- "packstream 0.1.0",
-]
-
-[[package]]
-name = "boltstream"
-version = "0.1.0"
-dependencies = [
- "log 0.3.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "packstream 0.1.0",
 ]
 
@@ -25,7 +16,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "neo4j"
 version = "0.1.0"
 dependencies = [
- "boltstream 0.1.0",
  "log 0.3.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "packstream 0.1.0",
 ]

@@ -1,8 +1,0 @@
-[package]
-name = "boltstream"
-version = "0.1.0"
-authors = ["Nigel Small <nigel@nigelsmall.name>"]
-
-[dependencies]
-log = "0.3.7"
-packstream = { path = "../packstream" }
