@@ -285,6 +285,14 @@ impl Unpacker {
                 let size: usize = self.unpack_u8() as usize;
                 self.unpack_string(size)
             },
+            0xD1 => {
+                let size: usize = self.unpack_u16() as usize;
+                self.unpack_string(size)
+            },
+            0xD2 => {
+                let size: usize = self.unpack_u32() as usize;
+                self.unpack_string(size)
+            },
             0xF0...0xFF => Value::Integer(marker as i64 - 0x100),
             _ => panic!("Illegal value with marker {:02X}", marker),
         }
@@ -334,10 +342,21 @@ impl Unpacker {
         value
     }
 
+    fn unpack_u16(&mut self) -> u16 {
+        (self.unpack_u8() as u16) << 8 | self.unpack_u8() as u16
+    }
+
     fn unpack_i8(&mut self) -> i8 {
         let value: i8 = self.buffer[self.unpack_ptr] as i8;
         self.unpack_ptr += 1;
         value
+    }
+
+    fn unpack_u32(&mut self) -> u32 {
+        (self.unpack_u8() as u32) << 24 |
+        (self.unpack_u8() as u32) << 16 |
+        (self.unpack_u8() as u32) << 8 |
+         self.unpack_u8() as u32
     }
 
     fn unpack_i16(&mut self) -> i16 {
