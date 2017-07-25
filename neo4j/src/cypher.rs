@@ -128,7 +128,8 @@ impl CypherStream {
         match self.fetch_header(head) {
             Some(header) => match header {
                 BoltSummary::Success(metadata) => StatementResult { header: metadata, body: body },
-                _ => panic!("Failed! Not successful."),
+                BoltSummary::Ignored(metadata) => {println!("{:?}", metadata); panic!("Failed! Not successful.")},
+                BoltSummary::Failure(metadata) => {println!("{:?}", metadata); panic!("Failed! Not successful.")},
             },
             _ => panic!("Failed! No header summary"),
         }
