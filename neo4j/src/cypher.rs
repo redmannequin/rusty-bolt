@@ -7,15 +7,13 @@ use packstream::values::{Value, Data};
 
 const USER_AGENT: &'static str = "rusty-bolt/0.1.0";
 
-pub type Result<T> = ::bolt::Result<T>;
-
 pub struct CypherStream {
     bolt: BoltStream,
     server_version: Option<String>,
     bookmark: Option<String>,
 }
 impl CypherStream {
-    pub fn connect(address: &str, user: &str, password: &str) -> self::Result<CypherStream> {
+    pub fn connect(address: &str, user: &str, password: &str) -> ::bolt::Result<CypherStream> {
         info!("Connecting to bolt://{} as {}", address, user);
         match BoltStream::connect(address) {
             Ok(mut bolt) => {
@@ -119,7 +117,7 @@ impl CypherStream {
         self.bolt.compact_responses();
     }
 
-    pub fn run(&mut self, statement: &str, parameters: HashMap<&str, Value>) -> StatementResult {
+    pub fn run(&mut self, statement: &str, parameters: HashMap<&str, Value>) -> Result<StatementResult, HashMap<String, Value>> {
         self.bolt.pack_run(statement, parameters);
         self.bolt.pack_pull_all();
         let head = self.bolt.collect_response();
@@ -127,9 +125,9 @@ impl CypherStream {
         self.send();
         match self.fetch_header(head) {
             Some(header) => match header {
-                BoltSummary::Success(metadata) => StatementResult { header: metadata, body: body },
-                BoltSummary::Ignored(metadata) => {println!("{:?}", metadata); panic!("Failed! Not successful.")},
-                BoltSummary::Failure(metadata) => {println!("{:?}", metadata); panic!("Failed! Not successful.")},
+                BoltSummary::Success(metadata) => Ok(StatementResult { header: metadata, body: body }),
+                BoltSummary::Ignored(metadata) => Err(metadata),
+                BoltSummary::Failure(metadata) => Err(metadata),
             },
             _ => panic!("Failed! No header summary"),
         }
