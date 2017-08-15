@@ -183,16 +183,11 @@ impl Packer {
     }
 
     fn write(&mut self, value: u8) {
-        let index: usize = self.buffer.len();
-        self.buffer.resize(index + 1, 0);
-        self.buffer[index] = value;
+        self.buffer.push(value);
     }
 
     fn write_slice(&mut self, buf: &[u8]) {
-        let start: usize = self.buffer.len();
-        let end: usize = start + buf.len();
-        self.buffer.resize(end, 0);
-        &mut self.buffer[start..end].copy_from_slice(&buf[..]);
+        self.buffer.append(&mut buf.to_vec());
     }
 
 }
