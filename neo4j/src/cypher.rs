@@ -135,7 +135,7 @@ impl CypherStream {
 
     pub fn run_unchecked(&mut self, statement: &str, parameters: HashMap<&str, Value>) {
         self.bolt.pack_run(statement, parameters);
-        self.bolt.pack_pull_all();
+        self.bolt.pack_discard_all();
         self.bolt.collect_response();
         self.bolt.collect_response();
         self.send();
