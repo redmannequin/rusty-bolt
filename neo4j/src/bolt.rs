@@ -166,10 +166,10 @@ impl BoltStream {
         for &mark in &self.end_of_request_markers {
             for chunk_data in self.packer[offset..mark].chunks(MAX_CHUNK_SIZE) {
                 let chunk_size = chunk_data.len();
-                let _ = self.stream.write(&[(chunk_size >> 8) as u8, chunk_size as u8]).unwrap();
-                let _ = self.stream.write(&chunk_data).unwrap();
+                self.stream.write_all(&[(chunk_size >> 8) as u8, chunk_size as u8]).unwrap();
+                self.stream.write_all(&chunk_data).unwrap();
             }
-            let _ = self.stream.write(&[0, 0]).unwrap();
+            self.stream.write_all(&[0, 0]).unwrap();
             offset = mark;
         }
         self.packer.clear();
