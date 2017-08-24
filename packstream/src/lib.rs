@@ -5,6 +5,7 @@ use std::collections::HashMap;
 pub mod values;
 use values::{Value};
 
+#[derive(Default)]
 pub struct Packer {
     buffer: Vec<u8>,
 }

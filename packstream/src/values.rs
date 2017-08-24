@@ -24,7 +24,10 @@ impl fmt::Debug for Value {
             Value::String(ref value) => write!(f, "{:?}", value),
             Value::List(ref values) => write!(f, "{:?}", values),
             Value::Map(ref values) => write!(f, "{:?}", values),
-            Value::Structure { signature, ref fields } => write!(f, "#{:02X} {:?}", signature, fields),
+            Value::Structure {
+                signature,
+                ref fields,
+            } => write!(f, "#{:02X} {:?}", signature, fields),
         }
     }
 }
@@ -120,7 +123,7 @@ impl_ValueCast_to_Float!(f64);
 impl<'t> ValueCast for &'t str {
     fn from(&self) -> Value {
         let mut s = String::with_capacity(self.len());
-        s.push_str(&self);
+        s.push_str(self);
         Value::String(s)
     }
 }
@@ -145,63 +148,61 @@ pub trait ValueMatch {
 }
 
 impl ValueMatch for Value {
-
     fn is_null(&self) -> bool {
         match *self {
             Value::Null => true,
-            _ => false
+            _ => false,
         }
     }
 
     fn is_boolean(&self) -> bool {
         match *self {
             Value::Boolean(_) => true,
-            _ => false
+            _ => false,
         }
     }
 
     fn is_integer(&self) -> bool {
         match *self {
             Value::Integer(_) => true,
-            _ => false
+            _ => false,
         }
     }
 
     fn is_float(&self) -> bool {
         match *self {
             Value::Float(_) => true,
-            _ => false
+            _ => false,
         }
     }
 
     fn is_string(&self) -> bool {
         match *self {
             Value::String(_) => true,
-            _ => false
+            _ => false,
         }
     }
 
     fn is_list(&self) -> bool {
         match *self {
             Value::List(_) => true,
-            _ => false
+            _ => false,
         }
     }
 
     fn is_map(&self) -> bool {
         match *self {
             Value::Map(_) => true,
-            _ => false
+            _ => false,
         }
     }
 
     fn is_structure(&self) -> bool {
         match *self {
-            Value::Structure { signature: _, fields: _ } => true,
-            _ => false
+            Value::Structure { .. } => true,
+            _ => false,
         }
     }
-
 }
 
 pub enum Data {
