@@ -206,6 +206,28 @@ impl BoltStream {
         }
     }
 
+    /// Fetches the last message to fail before a given ignored message.
+    /// Returns None if a failure cannot be found inside the current buffer.
+    ///
+    pub fn fetch_failure(&mut self, response_id: usize) -> Option<BoltSummary> {
+        let response_index = response_id - self.responses_done;
+        let from_end = self.responses.len()-response_index;
+        let mut iter = self.responses.iter_mut().rev().skip(from_end).skip_while(|r| { 
+            match r.summary {
+                Some(ref s) => {
+                    match *s {
+                        BoltSummary::Failure(_) => false,
+                        _ => true,
+                    }
+                },
+                None => true,
+            }});
+        match iter.next() {
+            Some(r) => r.summary.take(),
+            None => None,
+        }
+    }
+
     /// Fetches the next response message for the designated response,
     /// assuming that response is not already completely buffered.
     ///

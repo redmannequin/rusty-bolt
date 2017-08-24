@@ -78,14 +78,13 @@ impl CypherStream {
         self.bolt.ignore_response();
     }
 
-    pub fn commit_transaction(&mut self) {
+    pub fn commit_transaction(&mut self) -> Option<BoltSummary>{
         self.bolt.pack_run("COMMIT", parameters!());
         self.bolt.pack_discard_all();
         self.bolt.ignore_response();
         let body = self.bolt.collect_response();
         self.bolt.send();
         let summary = self.bolt.fetch_summary(body);
-        self.bolt.compact_responses();
 
         let bookmark: Option<String> = match summary {
             Some(BoltSummary::Success(ref metadata)) => match metadata.get("bookmark") {
@@ -95,8 +94,21 @@ impl CypherStream {
             _ => None,
         };
 
+        let ret = match summary {
+            Some(s) => {
+                match s {
+                    BoltSummary::Ignored(_) => self.bolt.fetch_failure(body),
+                    _ => Some(s),
+                }
+            },
+            None => None,
+        };
+
+        self.bolt.compact_responses();
+
         info!("COMMIT |...|->{:?}", bookmark);
         self.bookmark = bookmark;
+        ret
     }
 
     pub fn rollback_transaction(&mut self) {
