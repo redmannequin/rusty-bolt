@@ -9,6 +9,8 @@ extern crate packstream;
 use packstream::{Packer, Unpacker};
 use packstream::values::{Value, Data};
 
+use byteorder::{BigEndian, ReadBytesExt};
+
 const HANDSHAKE: [u8; 20] = [0x60, 0x60, 0xB0, 0x17,
                              0x00, 0x00, 0x00, 0x01,
                              0x00, 0x00, 0x00, 0x00,
@@ -263,18 +265,15 @@ impl BoltStream {
 
     fn receive(&mut self) {
         self.unpacker.clear();
-        let mut chunk_size: usize = self.read_chunk_size();
+        let mut chunk_size = self.read_chunk_size();
         while chunk_size > 0 {
-            let _ = self.stream.read_exact(&mut self.unpacker.buffer(chunk_size));
+            self.unpacker.load_n(&mut self.stream, chunk_size as u64);
             chunk_size = self.read_chunk_size();
         }
     }
 
-    fn read_chunk_size(&mut self) -> usize {
-        let mut chunk_header = &mut [0u8; 2];
-        let _ = self.stream.read_exact(chunk_header);
-//        log_line!("S: [{:02X} {:02X}]", chunk_header[0] as u8, chunk_header[1] as u8);
-        0x100 * chunk_header[0] as usize + chunk_header[1] as usize
+    fn read_chunk_size(&mut self) -> u16 {
+        self.stream.read_u16::<BigEndian>().unwrap()
     }
 
     /// Reads the next message from the stream into the read buffer.
