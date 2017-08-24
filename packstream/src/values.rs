@@ -70,16 +70,6 @@ macro_rules! impl_ValueCast_to_Float {
     }
 }
 
-macro_rules! impl_ValueCast_to_List {
-    ($T:ty) => {
-        impl ValueCast for $T {
-            fn from(&self) -> Value {
-               Value::List(self.iter().map(|&x| ValueCast::from(&x)).collect::<Vec<Value>>())
-            }
-        }
-    }
-}
-
 impl ValueCast for bool {
     fn from(&self) -> Value {
         Value::Boolean(*self)
@@ -91,6 +81,24 @@ impl ValueCast for char {
         let mut s = String::with_capacity(4);
         s.push(*self);
         Value::String(s)
+    }
+}
+
+impl<T> ValueCast for Vec<T>
+where
+    T: ValueCast,
+{
+    fn from(&self) -> Value {
+        Value::List(self.iter().map(|x| x.from()).collect())
+    }
+}
+
+impl<T> ValueCast for [T]
+where
+    T: ValueCast,
+{
+    fn from(&self) -> Value {
+        Value::List(self.iter().map(|x| x.from()).collect())
     }
 }
 
@@ -108,30 +116,6 @@ impl_ValueCast_to_Integer!(usize);
 
 impl_ValueCast_to_Float!(f32);
 impl_ValueCast_to_Float!(f64);
-
-impl_ValueCast_to_List!([i8]);
-impl_ValueCast_to_List!([i16]);
-impl_ValueCast_to_List!([i32]);
-impl_ValueCast_to_List!([i64]);
-impl_ValueCast_to_List!([isize]);
-
-impl_ValueCast_to_List!([u8]);
-impl_ValueCast_to_List!([u16]);
-impl_ValueCast_to_List!([u32]);
-impl_ValueCast_to_List!([u64]);
-impl_ValueCast_to_List!([usize]);
-
-impl_ValueCast_to_List!(Vec<i8>);
-impl_ValueCast_to_List!(Vec<i16>);
-impl_ValueCast_to_List!(Vec<i32>);
-impl_ValueCast_to_List!(Vec<i64>);
-impl_ValueCast_to_List!(Vec<isize>);
-
-impl_ValueCast_to_List!(Vec<u8>);
-impl_ValueCast_to_List!(Vec<u16>);
-impl_ValueCast_to_List!(Vec<u32>);
-impl_ValueCast_to_List!(Vec<u64>);
-impl_ValueCast_to_List!(Vec<usize>);
 
 impl<'t> ValueCast for &'t str {
     fn from(&self) -> Value {
