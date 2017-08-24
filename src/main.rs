@@ -25,9 +25,8 @@
 use std::env;
 use std::collections::{VecDeque, HashMap};
 
-#[macro_use]
 extern crate neo4j;
-use neo4j::cypher::{CypherStream};
+use neo4j::cypher::CypherStream;
 
 #[macro_use]
 extern crate packstream;
@@ -42,10 +41,10 @@ fn main() {
     };
     let parameters = parameters!("x" => 1);
 
-//    let _ = log::set_logger(|max_log_level| {
-//        max_log_level.set(log::LogLevelFilter::Debug);
-//        Box::new(SimpleLogger)
-//    });
+    //    let _ = log::set_logger(|max_log_level| {
+    //        max_log_level.set(log::LogLevelFilter::Debug);
+    //        Box::new(SimpleLogger)
+    //    });
 
     let session = CypherStream::connect("[::1]:7687", "neo4j", "password").unwrap();
     dump(session, &statement[..], parameters);
@@ -54,10 +53,10 @@ fn main() {
 
 fn dump(mut cypher: CypherStream, statement: &str, parameters: HashMap<&str, Value>) {
     // begin transaction
-//    cypher.begin_transaction(None);
+    //    cypher.begin_transaction(None);
 
     // execute statement
-    let result = cypher.run(statement, parameters);
+    let result = cypher.run(statement, parameters).unwrap();
     println!("{}", result.keys());
 
     // iterate result
@@ -70,9 +69,16 @@ fn dump(mut cypher: CypherStream, statement: &str, parameters: HashMap<&str, Val
         }
     }
     let _ = cypher.fetch_summary(&result);
-    println!("({} record{})", counter, match counter { 1 => "", _ => "s" });
+    println!(
+        "({} record{})",
+        counter,
+        match counter {
+            1 => "",
+            _ => "s",
+        }
+    );
 
     // commit transaction
-//    cypher.commit_transaction();
+    //    cypher.commit_transaction();
 
 }
