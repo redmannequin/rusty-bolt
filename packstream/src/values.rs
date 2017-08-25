@@ -105,6 +105,19 @@ where
     }
 }
 
+impl<T> ValueCast for HashMap<String, T>
+where
+    T: ValueCast,
+{
+    fn from(&self) -> Value {
+        Value::Map(
+            self.iter()
+                .map(|i| (i.0.clone(), i.1.from()))
+                .collect::<HashMap<String, Value>>(),
+        )
+    }
+}
+
 impl_ValueCast_to_Integer!(i8);
 impl_ValueCast_to_Integer!(i16);
 impl_ValueCast_to_Integer!(i32);
