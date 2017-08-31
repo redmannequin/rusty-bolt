@@ -1,8 +1,9 @@
 use std::fmt;
+use std::hash::Hash;
 use std::vec::Vec;
 use std::collections::HashMap;
 
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum Value {
     Null,
     Boolean(bool),
@@ -49,105 +50,77 @@ pub fn write_tsv(f: &mut fmt::Formatter, values: &[Value]) -> fmt::Result {
     write!(f, "{:?}", values[last])
 }
 
-pub trait ValueCast {
-    fn from(&self) -> Value;
-}
-
-macro_rules! impl_ValueCast_to_Integer {
+macro_rules! impl_From_Integer {
     ($T:ty) => {
-        impl ValueCast for $T {
-            fn from(&self) -> Value {
-               Value::Integer(*self as i64)
+        impl From<$T> for Value {
+            fn from(val: $T) -> Self {
+                Value::Integer(val as i64)
             }
         }
     }
 }
 
-macro_rules! impl_ValueCast_to_Float {
+macro_rules! impl_From_Float {
     ($T:ty) => {
-        impl ValueCast for $T {
-            fn from(&self) -> Value {
-               Value::Float(*self as f64)
+        impl From<$T> for Value {
+            fn from(val: $T) -> Self {
+               Value::Float(val as f64)
             }
         }
     }
 }
 
-impl ValueCast for bool {
-    fn from(&self) -> Value {
-        Value::Boolean(*self)
+impl From<bool> for Value {
+    fn from(val: bool) -> Self {
+        Value::Boolean(val)
     }
 }
 
-impl ValueCast for char {
-    fn from(&self) -> Value {
-        let mut s = String::with_capacity(4);
-        s.push(*self);
-        Value::String(s)
-    }
-}
-
-impl<T> ValueCast for Vec<T>
+impl<T> From<Vec<T>> for Value
 where
-    T: ValueCast,
+    T: Into<Value>,
 {
-    fn from(&self) -> Value {
-        Value::List(self.iter().map(|x| x.from()).collect())
+    fn from(mut val: Vec<T>) -> Self {
+        Value::List(val.drain(..).map(|e| e.into()).collect())
     }
 }
 
-impl<T> ValueCast for [T]
+impl<S, T> From<HashMap<S, T>> for Value
 where
-    T: ValueCast,
+    S: ToString + Eq + Hash,
+    T: Into<Value>,
 {
-    fn from(&self) -> Value {
-        Value::List(self.iter().map(|x| x.from()).collect())
+    fn from(mut val: HashMap<S, T>) -> Self {
+        Value::Map(val.drain().map(|e| (e.0.to_string(), e.1.into())).collect())
     }
 }
 
-impl<T> ValueCast for HashMap<String, T>
-where
-    T: ValueCast,
-{
-    fn from(&self) -> Value {
-        Value::Map(
-            self.iter()
-                .map(|i| (i.0.clone(), i.1.from()))
-                .collect::<HashMap<String, Value>>(),
-        )
+impl From<String> for Value {
+    fn from(val: String) -> Self {
+        Value::String(val)
     }
 }
 
-impl_ValueCast_to_Integer!(i8);
-impl_ValueCast_to_Integer!(i16);
-impl_ValueCast_to_Integer!(i32);
-impl_ValueCast_to_Integer!(i64);
-impl_ValueCast_to_Integer!(isize);
-
-impl_ValueCast_to_Integer!(u8);
-impl_ValueCast_to_Integer!(u16);
-impl_ValueCast_to_Integer!(u32);
-impl_ValueCast_to_Integer!(u64);
-impl_ValueCast_to_Integer!(usize);
-
-impl_ValueCast_to_Float!(f32);
-impl_ValueCast_to_Float!(f64);
-
-impl<'t> ValueCast for &'t str {
-    fn from(&self) -> Value {
-        let mut s = String::with_capacity(self.len());
-        s.push_str(self);
-        Value::String(s)
+impl<'t> From<&'t str> for Value {
+    fn from(val: &'t str) -> Self {
+        Value::String(String::from(val))
     }
 }
 
-impl ValueCast for String {
-    fn from(&self) -> Value {
-        let mut s = String::with_capacity(self.len());
-        s.push_str(&self[..]);
-        Value::String(s)
-    }
-}
+impl_From_Integer!(i8);
+impl_From_Integer!(i16);
+impl_From_Integer!(i32);
+impl_From_Integer!(i64);
+impl_From_Integer!(isize);
+
+impl_From_Integer!(u8);
+impl_From_Integer!(u16);
+impl_From_Integer!(u32);
+impl_From_Integer!(u64);
+impl_From_Integer!(usize);
+
+impl_From_Float!(f32);
+impl_From_Float!(f64);
 
 pub trait ValueMatch {
     fn is_null(&self) -> bool;
@@ -249,11 +222,11 @@ macro_rules! parameters(
     { $($key:expr => $value:expr),* } => {
         {
             use std::collections::HashMap;
-            use $crate::values::{Value, ValueCast};
+            use $crate::values::Value;
 
             let mut map : HashMap<&str, Value> = HashMap::new();
             $(
-                map.insert($key, ValueCast::from(&$value));
+                map.insert($key, $value.into());
             )+;
 
             map
