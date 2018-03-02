@@ -2,6 +2,7 @@ use std::fmt;
 use std::hash::Hash;
 use std::vec::Vec;
 use std::collections::HashMap;
+use std::iter::FromIterator;
 
 #[derive(Clone, PartialEq)]
 pub enum Value {
@@ -82,6 +83,15 @@ where
 {
     fn from(mut val: Vec<T>) -> Self {
         Value::List(val.drain(..).map(|e| e.into()).collect())
+    }
+}
+
+impl<T> FromIterator<T> for Value
+where
+    T: Into<Value>,
+{
+    fn from_iter<I: IntoIterator<Item=T>>(iter: I) -> Self {
+        Value::List(iter.into_iter().map(|v| v.into()).collect())
     }
 }
 
