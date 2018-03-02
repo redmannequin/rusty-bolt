@@ -101,7 +101,7 @@ where
     T: Into<Value>,
 {
     fn from(mut val: HashMap<S, T>) -> Self {
-        Value::Map(val.drain().map(|e| (e.0.to_string(), e.1.into())).collect())
+        Value::Map(val.drain().map(|(k, v)| (k.to_string(), v.into())).collect())
     }
 }
 
