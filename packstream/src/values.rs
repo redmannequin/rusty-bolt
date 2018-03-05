@@ -105,6 +105,16 @@ where
     }
 }
 
+impl<S, T> FromIterator<(S, T)> for Value
+    where
+        S: ToString + Eq + Hash,
+        T: Into<Value>,
+{
+    fn from_iter<I: IntoIterator<Item=(S, T)>>(iter: I) -> Self {
+        Value::Map(iter.into_iter().map(|(k, v)| (k.to_string(), v.into())).collect())
+    }
+}
+
 impl From<String> for Value {
     fn from(val: String) -> Self {
         Value::String(val)
