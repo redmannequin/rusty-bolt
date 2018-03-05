@@ -81,8 +81,8 @@ impl<T> From<Vec<T>> for Value
 where
     T: Into<Value>,
 {
-    fn from(mut val: Vec<T>) -> Self {
-        Value::List(val.drain(..).map(|e| e.into()).collect())
+    fn from(val: Vec<T>) -> Self {
+        Value::List(val.into_iter().map(|e| e.into()).collect())
     }
 }
 
@@ -100,8 +100,8 @@ where
     S: ToString + Eq + Hash,
     T: Into<Value>,
 {
-    fn from(mut val: HashMap<S, T>) -> Self {
-        Value::Map(val.drain().map(|(k, v)| (k.to_string(), v.into())).collect())
+    fn from(val: HashMap<S, T>) -> Self {
+        Value::Map(val.into_iter().map(|(k, v)| (k.to_string(), v.into())).collect())
     }
 }
 
