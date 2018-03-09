@@ -302,8 +302,8 @@ impl Unpacker {
     }
 
     fn unpack_string(&mut self, size: usize) -> Value {
-        let mut cur = &mut self.cursor;
-        let mut s = String::new();
+        let cur = &mut self.cursor;
+        let mut s = String::with_capacity(size);
         cur.take(size as u64).read_to_string(&mut s).unwrap();
         Value::String(s)
     }
