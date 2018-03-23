@@ -1,9 +1,9 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
 use bolt::{BoltStream, BoltSummary};
 
 extern crate packstream;
-use packstream::values::{Value, Data};
+use packstream::{Data, Value};
 
 const USER_AGENT: &'static str = "rusty-bolt/0.1.0";
 
@@ -17,7 +17,7 @@ impl CypherStream {
         info!("Connecting to bolt://{} as {}", address, user);
         match BoltStream::connect(address) {
             Ok(mut bolt) => {
-                bolt.pack_init(USER_AGENT, user, password);
+                bolt.init(USER_AGENT, user, password);
                 let init = bolt.collect_response();
                 bolt.send();
                 let init_summary = bolt.fetch_summary(init);
@@ -29,7 +29,9 @@ impl CypherStream {
                         Some(&Value::String(ref string)) => Some(string.clone()),
                         _ => None,
                     },
-                    BoltSummary::Ignored(_) => panic!("Protocol violation! INIT should not be IGNORED"),
+                    BoltSummary::Ignored(_) => {
+                        panic!("Protocol violation! INIT should not be IGNORED")
+                    }
                     BoltSummary::Failure(_) => panic!("INIT returned FAILURE"),
                 };
 
@@ -39,8 +41,8 @@ impl CypherStream {
                     server_version: server_version,
                     bookmark: None,
                 })
-            },
-            Err(e) => Err(e)
+            }
+            Err(e) => Err(e),
         }
     }
 
@@ -69,18 +71,18 @@ impl CypherStream {
 
     pub fn begin_transaction(&mut self, bookmark: Option<&str>) {
         info!("BEGIN {:?}->|...|", bookmark);
-        self.bolt.pack_run("BEGIN", match bookmark {
-            Some(string) => parameters!("bookmark" => string),
-            _ => parameters!(),
-        });
-        self.bolt.pack_discard_all();
+        self.bolt.run(
+            "BEGIN",
+            bookmark.map(|v| parameters!("bookmark" => v).into()),
+        );
+        self.bolt.discard_all();
         self.bolt.ignore_response();
         self.bolt.ignore_response();
     }
 
-    pub fn commit_transaction(&mut self) -> Option<BoltSummary>{
-        self.bolt.pack_run("COMMIT", parameters!());
-        self.bolt.pack_discard_all();
+    pub fn commit_transaction(&mut self) -> Option<BoltSummary> {
+        self.bolt.run("COMMIT", None);
+        self.bolt.discard_all();
         self.bolt.ignore_response();
         let body = self.bolt.collect_response();
         self.bolt.send();
@@ -95,11 +97,9 @@ impl CypherStream {
         };
 
         let ret = match summary {
-            Some(s) => {
-                match s {
-                    BoltSummary::Ignored(_) => self.bolt.fetch_failure(body),
-                    _ => Some(s),
-                }
+            Some(s) => match s {
+                BoltSummary::Ignored(_) => self.bolt.fetch_failure(body),
+                _ => Some(s),
             },
             None => None,
         };
@@ -112,8 +112,8 @@ impl CypherStream {
     }
 
     pub fn rollback_transaction(&mut self) {
-        self.bolt.pack_run("ROLLBACK", parameters!());
-        self.bolt.pack_discard_all();
+        self.bolt.run("ROLLBACK", None);
+        self.bolt.discard_all();
         self.bolt.ignore_response();
         let body = self.bolt.collect_response();
         self.bolt.send();
@@ -122,22 +122,29 @@ impl CypherStream {
     }
 
     pub fn reset(&mut self) {
-        self.bolt.pack_reset();
+        self.bolt.reset();
         let reset = self.bolt.collect_response();
         self.bolt.send();
         self.bolt.fetch_summary(reset);
         self.bolt.compact_responses();
     }
 
-    pub fn run(&mut self, statement: &str, parameters: HashMap<&str, Value>) -> Result<StatementResult, HashMap<String, Value>> {
-        self.bolt.pack_run(statement, parameters);
-        self.bolt.pack_pull_all();
+    pub fn run(
+        &mut self,
+        statement: &str,
+        parameters: HashMap<&str, Value>,
+    ) -> Result<StatementResult, HashMap<String, Value>> {
+        self.bolt.run(statement, Some(parameters.into()));
+        self.bolt.pull_all();
         let head = self.bolt.collect_response();
         let body = self.bolt.collect_response();
         self.send();
         match self.fetch_header(head) {
             Some(header) => match header {
-                BoltSummary::Success(metadata) => Ok(StatementResult { header: metadata, body: body }),
+                BoltSummary::Success(metadata) => Ok(StatementResult {
+                    header: metadata,
+                    body: body,
+                }),
                 BoltSummary::Ignored(metadata) => Err(metadata),
                 BoltSummary::Failure(metadata) => Err(metadata),
             },
@@ -146,8 +153,8 @@ impl CypherStream {
     }
 
     pub fn run_unchecked(&mut self, statement: &str, parameters: HashMap<&str, Value>) {
-        self.bolt.pack_run(statement, parameters);
-        self.bolt.pack_discard_all();
+        self.bolt.run(statement, Some(parameters.into()));
+        self.bolt.discard_all();
         self.bolt.ignore_response();
         self.bolt.ignore_response();
         self.send();
@@ -165,18 +172,18 @@ impl CypherStream {
         match summary {
             Some(BoltSummary::Ignored(_)) => panic!("RUN was IGNORED"),
             Some(BoltSummary::Failure(_)) => {
-                self.bolt.pack_ack_failure();
+                self.bolt.ack_failure();
                 self.bolt.ignore_response();
                 self.bolt.send();
-            },
+            }
             _ => (),
         };
         summary
     }
 
     /// Fetch the result detail
-    pub fn fetch(&mut self, result: &StatementResult, into: &mut VecDeque<Data>) -> usize {
-        self.bolt.fetch_detail(result.body, into)
+    pub fn fetch(&mut self, result: &StatementResult) -> Option<Data> {
+        self.bolt.fetch_record(result.body)
     }
 
     /// Fetch the result summary
@@ -186,10 +193,10 @@ impl CypherStream {
         self.bolt.compact_responses();
         match summary {
             Some(BoltSummary::Failure(_)) => {
-                self.bolt.pack_ack_failure();
+                self.bolt.ack_failure();
                 self.bolt.ignore_response();
                 self.bolt.send();
-            },
+            }
             _ => (),
         };
         summary
@@ -210,6 +217,5 @@ impl StatementResult {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn it_works() {
-    }
+    fn it_works() {}
 }

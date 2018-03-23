@@ -23,14 +23,14 @@
 //////////////////////////////////////////////////////////////////////
 
 use std::env;
-use std::collections::{VecDeque, HashMap};
+use std::collections::HashMap;
 
 extern crate neo4j;
-use neo4j::cypher::CypherStream;
+use neo4j::*;
 
 #[macro_use]
 extern crate packstream;
-use packstream::values::{Value, Data};
+use packstream::Value;
 
 fn main() {
     let mut args = env::args();
@@ -46,29 +46,21 @@ fn main() {
     //        Box::new(SimpleLogger)
     //    });
 
-    let session = CypherStream::connect("[::1]:7687", "neo4j", "password").unwrap();
+    let session = Neo4jDB::connect("[::1]:7687", "neo4j", "password").unwrap();
     dump(session, &statement[..], parameters);
-
 }
 
-fn dump(mut cypher: CypherStream, statement: &str, parameters: HashMap<&str, Value>) {
-    // begin transaction
-    //    cypher.begin_transaction(None);
-
+fn dump(mut neo: Neo4jDB, statement: &str, parameters: HashMap<&str, Value>) {
     // execute statement
-    let result = cypher.run(statement, parameters).unwrap();
-    println!("{}", result.keys());
+    let result = neo.run(statement, parameters).unwrap();
 
     // iterate result
     let mut counter: usize = 0;
-    let mut records: VecDeque<Data> = VecDeque::new();
-    while cypher.fetch(&result, &mut records) > 0 {
-        for record in records.drain(..) {
-            println!("{}", record);
-            counter += 1;
-        }
+    for record in result {
+        println!("{:?}", record);
+        counter += 1;
     }
-    let _ = cypher.fetch_summary(&result);
+
     println!(
         "({} record{})",
         counter,
@@ -77,8 +69,4 @@ fn dump(mut cypher: CypherStream, statement: &str, parameters: HashMap<&str, Val
             _ => "s",
         }
     );
-
-    // commit transaction
-    //    cypher.commit_transaction();
-
 }

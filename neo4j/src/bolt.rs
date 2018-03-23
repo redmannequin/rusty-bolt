@@ -2,28 +2,42 @@ use std::collections::{HashMap, VecDeque};
 use std::error::Error;
 use std::fmt;
 use std::io::prelude::*;
+use std::io;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::result;
 
-extern crate packstream;
-use packstream::{Packer, Unpacker};
-use packstream::values::{Value, Data};
+use packstream::{Data, Value};
 
 use byteorder::{BigEndian, ReadBytesExt};
 
-const HANDSHAKE: [u8; 20] = [0x60, 0x60, 0xB0, 0x17,
-                             0x00, 0x00, 0x00, 0x01,
-                             0x00, 0x00, 0x00, 0x00,
-                             0x00, 0x00, 0x00, 0x00,
-                             0x00, 0x00, 0x00, 0x00];
+use super::chunk::ChunkStream;
 
-const MAX_CHUNK_SIZE: usize = 0xFFFF;
+const HANDSHAKE: [u8; 20] = [
+    0x60, 0x60, 0xB0, 0x17,
+    0x00, 0x00, 0x00, 0x01,
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00,
+];
 
+mod sig {
+    pub const INIT: u8 = 0x01;
+    pub const RUN: u8 = 0x10;
+    pub const DISCARD_ALL: u8 = 0x2F;
+    pub const PULL_ALL: u8 = 0x3F;
+    pub const ACK_FAILURE: u8 = 0x0E;
+    pub const RESET: u8 = 0x0F;
+    pub const RECORD: u8 = 0x71;
+    pub const SUCCESS: u8 = 0x70;
+    pub const FAILURE: u8 = 0x7F;
+    pub const IGNORED: u8 = 0x7E;
+}
 
 #[derive(Debug)]
 pub enum BoltError {
     Connect(&'static str),
     Handshake(&'static str),
+    Socket(io::Error),
 }
 
 impl fmt::Display for BoltError {
@@ -31,6 +45,7 @@ impl fmt::Display for BoltError {
         match *self {
             BoltError::Connect(ref err) => write!(f, "Connect error: {}", err),
             BoltError::Handshake(ref err) => write!(f, "Handshake error: {}", err),
+            BoltError::Socket(ref err) => write!(f, "Socket error: {}", err),
         }
     }
 }
@@ -40,15 +55,20 @@ impl Error for BoltError {
         match *self {
             BoltError::Connect(ref err) => err,
             BoltError::Handshake(ref err) => err,
+            BoltError::Socket(ref err) => err.description(),
         }
     }
 }
 
+impl From<io::Error> for BoltError {
+    fn from(val: io::Error) -> Self {
+        BoltError::Socket(val)
+    }
+}
+
 pub struct BoltStream {
-    stream: TcpStream,
-    packer: Packer,
-    end_of_request_markers: VecDeque<usize>,
-    unpacker: Unpacker,
+    stream: ChunkStream<TcpStream>,
+    requests: Vec<Vec<u8>>,
     responses: VecDeque<BoltResponse>,
     responses_done: usize,
     current_response_index: usize,
@@ -61,28 +81,19 @@ impl BoltStream {
     pub fn connect<A: ToSocketAddrs>(address: A) -> Result<BoltStream> {
         match TcpStream::connect(address) {
             Ok(mut stream) => match stream.write(&HANDSHAKE) {
-                Ok(_) => {
-                    let mut buf = [0; 4];
-                    match stream.read(&mut buf) {
-                        Ok(_) => {
-                            let protocol_version: u32 = (buf[0] as u32) << 24 |
-                                                        (buf[1] as u32) << 16 |
-                                                        (buf[2] as u32) << 8 |
-                                                        (buf[3] as u32);
-                            debug!("S: <VERSION {}>", protocol_version);
-                            Ok(BoltStream {
-                                stream: stream,
-                                packer: Packer::new(),
-                                end_of_request_markers: VecDeque::new(),
-                                unpacker: Unpacker::new(),
-                                responses: VecDeque::new(),
-                                responses_done: 0,
-                                current_response_index: 0,
-                                protocol_version: protocol_version,
-                            })
-                        },
-                        Err(_) => Err(BoltError::Handshake("Error on read")),
+                Ok(_) => match stream.read_u32::<BigEndian>() {
+                    Ok(protocol_version) => {
+                        debug!("S: <VERSION {}>", protocol_version);
+                        Ok(BoltStream {
+                            stream: ChunkStream::new(stream),
+                            requests: Vec::new(),
+                            responses: VecDeque::new(),
+                            responses_done: 0,
+                            current_response_index: 0,
+                            protocol_version: protocol_version,
+                        })
                     }
+                    Err(_) => Err(BoltError::Handshake("Error on read")),
                 },
                 Err(_) => Err(BoltError::Handshake("Error on write")),
             },
@@ -94,88 +105,104 @@ impl BoltStream {
         self.protocol_version
     }
 
-    fn mark_end_of_request(&mut self) {
-        self.end_of_request_markers.push_back(self.packer.len());
-    }
-
     /// Pack an INIT message.
     ///
-    pub fn pack_init(&mut self, user_agent: &str, user: &str, password: &str) {
-        debug!("C: INIT {:?} {{\"scheme\": \"basic\", \"principal\": {:?}, \"credentials\": \"...\"}}", user_agent, user);
-        self.packer.pack_structure_header(2, 0x01);
-        self.packer.pack_string(user_agent);
-        self.packer.pack_map_header(3);
-        self.packer.pack_string("scheme");
-        self.packer.pack_string("basic");
-        self.packer.pack_string("principal");
-        self.packer.pack_string(user);
-        self.packer.pack_string("credentials");
-        self.packer.pack_string(password);
-        self.mark_end_of_request();
+    pub fn init(&mut self, user_agent: &str, user: &str, password: &str) {
+        debug!(
+            "C: INIT {:?} {{\"scheme\": \"basic\", \"principal\": {:?}, \"credentials\": \"...\"}}",
+            user_agent, user
+        );
+        self.requests.push(
+            Value::Structure {
+                signature: sig::INIT,
+                fields: vec![
+                    user_agent.into(),
+                    parameters!(
+                    "scheme" => "basic",
+                    "principal" => user,
+                    "credentials" => password
+                ).into(),
+                ].into(),
+            }.pack_into()
+                .unwrap(),
+        );
     }
 
     /// Pack an ACK_FAILURE message.
     ///
-    pub fn pack_ack_failure(&mut self) {
+    pub fn ack_failure(&mut self) {
         debug!("C: ACK_FAILURE");
-        self.packer.pack_structure_header(0, 0x0E);
-        self.mark_end_of_request();
+        self.requests.push(
+            Value::Structure {
+                signature: sig::ACK_FAILURE,
+                fields: vec![],
+            }.pack_into()
+                .unwrap(),
+        );
     }
 
     /// Pack a RESET message.
     ///
-    pub fn pack_reset(&mut self) {
+    pub fn reset(&mut self) {
         debug!("C: RESET");
-        self.packer.pack_structure_header(0, 0x0F);
-        self.mark_end_of_request();
+        self.requests.push(
+            Value::Structure {
+                signature: sig::RESET,
+                fields: vec![],
+            }.pack_into()
+                .unwrap(),
+        );
     }
 
     /// Pack a RUN message.
     ///
-    pub fn pack_run(&mut self, statement: &str, parameters: HashMap<&str, Value>) {
+    pub fn run(&mut self, statement: &str, parameters: Option<Value>) {
         debug!("C: RUN {:?} {:?}", statement, parameters);
-        self.packer.pack_structure_header(2, 0x10);
-        self.packer.pack_string(statement);
-        self.packer.pack_map_header(parameters.len());
-        for (name, value) in &parameters {
-            self.packer.pack_string(name);
-            self.packer.pack(value);
-        }
-        self.mark_end_of_request();
+        self.requests.push(
+            Value::Structure {
+                signature: sig::RUN,
+                fields: vec![
+                    statement.into(),
+                    parameters.unwrap_or(Value::Map(HashMap::new())),
+                ],
+            }.pack_into()
+                .unwrap(),
+        );
     }
 
     /// Pack a DISCARD_ALL message.
     ///
-    pub fn pack_discard_all(&mut self) {
+    pub fn discard_all(&mut self) {
         debug!("C: DISCARD_ALL");
-        self.packer.pack_structure_header(0, 0x2F);
-        self.mark_end_of_request();
+        self.requests.push(
+            Value::Structure {
+                signature: sig::DISCARD_ALL,
+                fields: vec![],
+            }.pack_into()
+                .unwrap(),
+        );
     }
 
     /// Pack a PULL_ALL message.
     ///
-    pub fn pack_pull_all(&mut self) {
+    pub fn pull_all(&mut self) {
         debug!("C: PULL_ALL");
-        self.packer.pack_structure_header(0, 0x3F);
-        self.mark_end_of_request();
+        self.requests.push(
+            Value::Structure {
+                signature: sig::PULL_ALL,
+                fields: vec![],
+            }.pack_into()
+                .unwrap(),
+        );
     }
 
     /// Send all queued outgoing messages.
     ///
     pub fn send(&mut self) {
         debug!("C: <SEND>");
-        let mut offset: usize = 0;
-        for &mark in &self.end_of_request_markers {
-            for chunk_data in self.packer[offset..mark].chunks(MAX_CHUNK_SIZE) {
-                let chunk_size = chunk_data.len();
-                self.stream.write_all(&[(chunk_size >> 8) as u8, chunk_size as u8]).unwrap();
-                self.stream.write_all(&chunk_data).unwrap();
-            }
-            self.stream.write_all(&[0, 0]).unwrap();
-            offset = mark;
+        for req in self.requests.drain(..) {
+            self.stream.send(&req[..]).unwrap();
         }
-        self.packer.clear();
-        self.end_of_request_markers.clear();
     }
 
     pub fn collect_response(&mut self) -> usize {
@@ -195,10 +222,10 @@ impl BoltStream {
                     if !response.done {
                         pruning = false;
                     }
-                },
+                }
                 _ => {
                     pruning = false;
-                },
+                }
             }
             if pruning {
                 self.responses.pop_front();
@@ -213,17 +240,16 @@ impl BoltStream {
     ///
     pub fn fetch_failure(&mut self, response_id: usize) -> Option<BoltSummary> {
         let response_index = response_id - self.responses_done;
-        let from_end = self.responses.len()-response_index;
-        let mut iter = self.responses.iter_mut().rev().skip(from_end).skip_while(|r| { 
-            match r.summary {
-                Some(ref s) => {
-                    match *s {
-                        BoltSummary::Failure(_) => false,
-                        _ => true,
-                    }
+        let from_end = self.responses.len() - response_index;
+        let mut iter = self.responses.iter_mut().rev().skip(from_end).skip_while(
+            |r| match r.summary {
+                Some(ref s) => match *s {
+                    BoltSummary::Failure(_) => false,
+                    _ => true,
                 },
                 None => true,
-            }});
+            },
+        );
         match iter.next() {
             Some(r) => r.summary.take(),
             None => None,
@@ -233,7 +259,7 @@ impl BoltStream {
     /// Fetches the next response message for the designated response,
     /// assuming that response is not already completely buffered.
     ///
-    pub fn fetch_detail(&mut self, response_id: usize, into: &mut VecDeque<Data>) -> usize {
+    pub fn fetch_record(&mut self, response_id: usize) -> Option<Data> {
         let response_index = response_id - self.responses_done;
         while self.current_response_index < response_index {
             self.fetch();
@@ -241,13 +267,7 @@ impl BoltStream {
         if self.current_response_index == response_index {
             self.fetch();
         }
-        match self.responses[response_index].detail.pop_front() {
-            Some(data) => {
-                into.push_back(data);
-                1
-            },
-            _ => 0,
-        }
+        self.responses[response_index].detail.pop_front()
     }
 
     /// Fetches all response messages for the designated response,
@@ -263,95 +283,84 @@ impl BoltStream {
         response.summary.take()
     }
 
-    fn receive(&mut self) {
-        self.unpacker.clear();
-        let mut chunk_size = self.read_chunk_size();
-        while chunk_size > 0 {
-            self.unpacker.load_n(&mut self.stream, chunk_size as u64);
-            chunk_size = self.read_chunk_size();
-        }
-    }
-
-    fn read_chunk_size(&mut self) -> u16 {
-        self.stream.read_u16::<BigEndian>().unwrap()
+    fn receive(&mut self) -> Value {
+        Value::unpack(&mut &self.stream.recv().unwrap()[..]).unwrap()
     }
 
     /// Reads the next message from the stream into the read buffer.
     ///
     fn fetch(&mut self) {
-        self.receive();
-        let mut response = self.responses.get_mut(self.current_response_index).unwrap();
-        match self.unpacker.unpack() {
-            Value::Structure { signature, mut fields } => match signature {
-                0x70 => {
+        let msg = self.receive();
+        let response = self.responses.get_mut(self.current_response_index).unwrap();
+        match msg {
+            Value::Structure {
+                signature,
+                mut fields,
+            } => match signature {
+                sig::SUCCESS => {
                     self.current_response_index += 1;
-                    match fields.len() {
-                        0 => {
-                            debug!("S: SUCCESS {{}}");
-                            response.summary = Some(BoltSummary::Success(HashMap::new()));
-                        },
-                        _ => match fields.remove(0) {
+                    if fields.is_empty() {
+                        debug!("S: SUCCESS {{}}");
+                        response.summary = Some(BoltSummary::Success(HashMap::new()));
+                    } else {
+                        match fields.remove(0) {
                             Value::Map(metadata) => {
                                 debug!("S: SUCCESS {:?}", metadata);
                                 response.summary = Some(BoltSummary::Success(metadata));
-                            },
+                            }
                             _ => panic!("Non-map metadata"),
-                        },
+                        }
                     }
-                },
-                0x71 => {
-                    match fields.len() {
-                        0 => {
-                            debug!("S: RECORD {{}}");
-                            response.detail.push_back(Data::Record(Vec::new()));
-                        },
-                        _ => match fields.remove(0) {
+                }
+                sig::RECORD => {
+                    if fields.is_empty() {
+                        debug!("S: RECORD {{}}");
+                        response.detail.push_back(Data::Record(Vec::new()));
+                    } else {
+                        match fields.remove(0) {
                             Value::List(data) => {
                                 debug!("S: RECORD {:?}", data);
                                 response.detail.push_back(Data::Record(data));
-                            },
+                            }
                             _ => panic!("Non-list data"),
-                        },
+                        }
                     }
-                },
-                0x7E => {
+                }
+                sig::IGNORED => {
                     self.current_response_index += 1;
-                    match fields.len() {
-                        0 => {
-                            debug!("S: IGNORED {{}}");
-                            response.summary = Some(BoltSummary::Ignored(HashMap::new()));
-                        },
-                        _ => match fields.remove(0) {
+                    if fields.is_empty() {
+                        debug!("S: IGNORED {{}}");
+                        response.summary = Some(BoltSummary::Ignored(HashMap::new()));
+                    } else {
+                        match fields.remove(0) {
                             Value::Map(metadata) => {
                                 debug!("S: IGNORED {:?}", metadata);
                                 response.summary = Some(BoltSummary::Ignored(metadata));
-                            },
+                            }
                             _ => panic!("Non-map metadata"),
-                        },
+                        }
                     }
-                },
-                0x7F => {
+                }
+                sig::FAILURE => {
                     self.current_response_index += 1;
-                    match fields.len() {
-                        0 => {
-                            debug!("S: FAILURE {{}}");
-                            response.summary = Some(BoltSummary::Failure(HashMap::new()));
-                        },
-                        _ => match fields.remove(0) {
+                    if fields.is_empty() {
+                        debug!("S: FAILURE {{}}");
+                        response.summary = Some(BoltSummary::Failure(HashMap::new()));
+                    } else {
+                        match fields.remove(0) {
                             Value::Map(metadata) => {
                                 debug!("S: FAILURE {:?}", metadata);
                                 response.summary = Some(BoltSummary::Failure(metadata));
-                            },
+                            }
                             _ => panic!("Non-map metadata"),
-                        },
+                        }
                     }
-                },
+                }
                 _ => panic!("Unknown response message with signature {:02X}", signature),
             },
             _ => panic!("Response message is not a structure"),
         }
     }
-
 }
 
 pub enum BoltSummary {
@@ -374,24 +383,31 @@ pub struct BoltResponse {
     summary: Option<BoltSummary>,
     done: bool,
 }
+
 impl BoltResponse {
     pub fn new() -> BoltResponse {
-        BoltResponse { detail: VecDeque::new(), summary: None, done: false }
+        BoltResponse {
+            detail: VecDeque::new(),
+            summary: None,
+            done: false,
+        }
     }
     pub fn done() -> BoltResponse {
-        BoltResponse { detail: VecDeque::new(), summary: None, done: true }
+        BoltResponse {
+            detail: VecDeque::new(),
+            summary: None,
+            done: true,
+        }
     }
 }
 
 impl fmt::Debug for BoltResponse {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.summary {
-            Some(ref summary) => {
-                match *summary {
-                    BoltSummary::Success(ref metadata) => write!(f, "SUCCESS {:?}", metadata),
-                    BoltSummary::Ignored(ref metadata) => write!(f, "IGNORED {:?}", metadata),
-                    BoltSummary::Failure(ref metadata) => write!(f, "FAILURE {:?}", metadata),
-                }
+            Some(ref summary) => match *summary {
+                BoltSummary::Success(ref metadata) => write!(f, "SUCCESS {:?}", metadata),
+                BoltSummary::Ignored(ref metadata) => write!(f, "IGNORED {:?}", metadata),
+                BoltSummary::Failure(ref metadata) => write!(f, "FAILURE {:?}", metadata),
             },
             None => write!(f, "None"),
         }
