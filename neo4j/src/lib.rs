@@ -213,3 +213,92 @@ impl<'a> Iterator for Neo4jMapIter<'a> {
             .map(|Data::Record(v)| self.keys.clone().into_iter().zip(v).collect())
     }
 }
+
+pub struct Node {
+    pub id: u64,
+    pub labs: Vec<String>,
+    pub props: HashMap<String, Value>,
+}
+
+impl Node {
+    pub fn from_value(val: Value) -> Result<Node, &'static str> {
+        match val {
+            Value::Structure {
+                signature,
+                mut fields,
+            } => {
+                if signature != 0x4E {
+                    return Err("Structure has incorrect signature");
+                }
+                if fields.len() != 3 {
+                    return Err("Node structure has incorrect number of fields");
+                }
+                let id = fields
+                    .remove(0)
+                    .into_int()
+                    .ok_or("id field is not an integer")?;
+                let labs = fields
+                    .remove(0)
+                    .into_vec()
+                    .map(Vec::into_iter)
+                    .map(|d| d.map(|i| i.into_string().unwrap()))
+                    .map(|i| i.collect())
+                    .ok_or("labels field is not a list")?;
+                let props = fields
+                    .remove(0)
+                    .into_map()
+                    .ok_or("properties field is not a map")?;
+                Ok(Node { id, labs, props })
+            }
+            _ => Err("Is not a node value."),
+        }
+    }
+}
+
+pub struct Rel {
+    pub id: u64,
+    pub src: u64,
+    pub dst: u64,
+    pub label: String,
+    pub props: HashMap<String, Value>,
+}
+
+impl Rel {
+    pub fn from_value(val: Value) -> Result<Rel, &'static str> {
+        match val {
+            Value::Structure {
+                signature,
+                mut fields,
+            } => {
+                if signature != 0x52 {
+                    return Err("Structure has incorrect signature");
+                }
+                if fields.len() != 5 {
+                    return Err("Rel structure has incorrect number of fields");
+                }
+                let id = fields
+                    .remove(0)
+                    .into_int()
+                    .ok_or("ID field is not an Integer")?;
+                let src = fields
+                    .remove(0)
+                    .into_int()
+                    .ok_or("Src field is not an Integer")?;
+                let dst = fields
+                    .remove(0)
+                    .into_int()
+                    .ok_or("Dst field is not an Integer")?;
+                let label = fields
+                    .remove(0)
+                    .into_string()
+                    .ok_or("Label field is not a String")?;
+                let props = fields
+                    .remove(0)
+                    .into_map()
+                    .ok_or("Props field is not a Map")?;
+                Ok(Rel{ id, src, dst, label, props })
+            }
+            _ => Err("Value is not an relationship"),
+        }
+    }
+}
