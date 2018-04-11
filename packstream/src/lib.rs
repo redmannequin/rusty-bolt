@@ -103,6 +103,11 @@ impl fmt::Debug for Value {
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
+            Value::Null => write!(f, "null"),
+            Value::Boolean(ref value) => write!(f, "{}", value),
+            Value::Integer(ref value) => write!(f, "{}", value),
+            Value::Float(ref value) => write!(f, "{}", value),
+            Value::String(ref value) => write!(f, "{}", value),
             Value::List(ref values) => write_tsv(f, values),
             _ => write!(f, "{:?}", self),
         }
