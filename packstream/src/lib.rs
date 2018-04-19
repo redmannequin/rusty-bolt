@@ -86,12 +86,12 @@ impl fmt::Debug for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Value::Null => write!(f, "null"),
-            Value::Boolean(ref value) => write!(f, "{:?}", value),
-            Value::Integer(ref value) => write!(f, "{:?}", value),
-            Value::Float(ref value) => write!(f, "{:?}", value),
-            Value::String(ref value) => write!(f, "{:?}", value),
-            Value::List(ref values) => write!(f, "{:?}", values),
-            Value::Map(ref values) => write!(f, "{:?}", values),
+            Value::Boolean(ref value) => <bool as fmt::Debug>::fmt(value, f),
+            Value::Integer(ref value) => <i64 as fmt::Debug>::fmt(value, f),
+            Value::Float(ref value) => <f64 as fmt::Debug>::fmt(value, f),
+            Value::String(ref value) => <String as fmt::Debug>::fmt(value, f),
+            Value::List(ref values) => <Vec<Value> as fmt::Debug>::fmt(values, f),
+            Value::Map(ref values) => <HashMap<String, Value> as fmt::Debug>::fmt(values, f),
             Value::Structure {
                 signature,
                 ref fields,
@@ -104,10 +104,10 @@ impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Value::Null => write!(f, "null"),
-            Value::Boolean(ref value) => write!(f, "{}", value),
-            Value::Integer(ref value) => write!(f, "{}", value),
-            Value::Float(ref value) => write!(f, "{}", value),
-            Value::String(ref value) => write!(f, "{}", value),
+            Value::Boolean(ref value) => <bool as fmt::Display>::fmt(value, f),
+            Value::Integer(ref value) => <i64 as fmt::Display>::fmt(value, f),
+            Value::Float(ref value) => <f64 as fmt::Display>::fmt(value, f),
+            Value::String(ref value) => <String as fmt::Display>::fmt(value, f),
             Value::List(ref values) => write_tsv(f, values),
             _ => write!(f, "{:?}", self),
         }
