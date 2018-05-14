@@ -10,7 +10,7 @@ pub type UnpackResult = Result<Value, io::Error>;
 pub fn unpack(stream: &mut Read) -> UnpackResult {
     let marker = stream.read_u8()?;
     match marker {
-        0x00...0x7F => Ok(Value::Integer(marker as i64)),
+        0x00...0x7F => Ok(Value::Integer(i64::from(marker))),
         0x80...0x8F => unpack_string((marker & 0x0F) as usize, stream),
         0x90...0x9F => unpack_list((marker & 0x0F) as usize, stream),
         0xA0...0xAF => unpack_map((marker & 0x0F) as usize, stream),
@@ -19,9 +19,9 @@ pub fn unpack(stream: &mut Read) -> UnpackResult {
         0xC1 => Ok(Value::Float(stream.read_f64::<BigEndian>()?)),
         0xC2 => Ok(Value::Boolean(false)),
         0xC3 => Ok(Value::Boolean(true)),
-        0xC8 => Ok(Value::Integer(stream.read_i8()? as i64)),
-        0xC9 => Ok(Value::Integer(stream.read_i16::<BigEndian>()? as i64)),
-        0xCA => Ok(Value::Integer(stream.read_i32::<BigEndian>()? as i64)),
+        0xC8 => Ok(Value::Integer(i64::from(stream.read_i8()?))),
+        0xC9 => Ok(Value::Integer(i64::from(stream.read_i16::<BigEndian>()?))),
+        0xCA => Ok(Value::Integer(i64::from(stream.read_i32::<BigEndian>()?))),
         0xCB => Ok(Value::Integer(stream.read_i64::<BigEndian>()?)),
         0xD0 => {
             let size = stream.read_u8()? as usize;
@@ -67,7 +67,7 @@ pub fn unpack(stream: &mut Read) -> UnpackResult {
             let size = stream.read_u16::<BigEndian>()? as usize;
             unpack_structure(size, stream)
         }
-        0xF0...0xFF => Ok(Value::Integer(marker as i64 - 0x100)),
+        0xF0...0xFF => Ok(Value::Integer(i64::from(marker) - 0x100)),
         _ => panic!("Illegal value with marker {:02X}", marker),
     }
 }
@@ -107,7 +107,7 @@ fn unpack_structure(size: usize, stream: &mut Read) -> UnpackResult {
         fields.push(unpack(stream)?);
     }
     Ok(Value::Structure {
-        signature: signature,
-        fields: fields,
+        signature,
+        fields,
     })
 }

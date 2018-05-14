@@ -136,7 +136,7 @@ macro_rules! impl_From_Float {
     ($T:ty) => {
         impl From<$T> for Value {
             fn from(val: $T) -> Self {
-               Value::Float(val as f64)
+               Value::Float(f64::from(val))
             }
         }
     }

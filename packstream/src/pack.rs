@@ -40,7 +40,7 @@ fn pack_integer(value: i64, out: &mut Write) -> PackResult {
         // INT_16
         out.write_u8(0xC9)?;
         out.write_i16::<BigEndian>(value as i16)
-    } else if -0x80000000 <= value && value < 0x80000000 {
+    } else if -0x8000_0000 <= value && value < 0x8000_0000 {
         // INT_32
         out.write_u8(0xCA)?;
         out.write_i32::<BigEndian>(value as i32)
@@ -66,7 +66,7 @@ fn pack_string(value: &str, out: &mut Write) -> PackResult {
     } else if size < 0x10000 {
         out.write_u8(0xD1)?;
         out.write_u16::<BigEndian>(size as u16)?;
-    } else if size < 0x100000000 {
+    } else if size < 0x1_0000_0000 {
         out.write_u8(0xD2)?;
         out.write_u32::<BigEndian>(size as u32)?;
     } else {
@@ -85,13 +85,13 @@ fn pack_list(value: Vec<Value>, out: &mut Write) -> PackResult {
     } else if size < 0x10000 {
         out.write_u8(0xD5).unwrap();
         out.write_u16::<BigEndian>(size as u16)?;
-    } else if size < 0x100000000 {
+    } else if size < 0x1_0000_0000 {
         out.write_u8(0xD6).unwrap();
         out.write_u32::<BigEndian>(size as u32)?;
     } else {
         panic!("List too big to pack");
     }
-    for val in value.into_iter() {
+    for val in value{
         val.pack(out)?;
     }
     Ok(())
@@ -107,13 +107,13 @@ fn pack_map(value: HashMap<String, Value>, out: &mut Write) -> PackResult {
     } else if size < 0x10000 {
         out.write_u8(0xD9)?;
         out.write_u16::<BigEndian>(size as u16)?;
-    } else if size < 0x100000000 {
+    } else if size < 0x1_0000_0000 {
         out.write_u8(0xDA)?;
         out.write_u32::<BigEndian>(size as u32)?;
     } else {
         panic!("Map too big to pack");
     }
-    for (key, val) in value.into_iter() {
+    for (key, val) in value {
         pack_string(&key[..], out)?;
         val.pack(out)?;
     }
@@ -134,7 +134,7 @@ fn pack_structure(signature: u8, fields: Vec<Value>, out: &mut Write) -> PackRes
         panic!("Structure too big to pack");
     }
     out.write_u8(signature)?;
-    for val in fields.into_iter() {
+    for val in fields {
         val.pack(out)?;
     }
     Ok(())

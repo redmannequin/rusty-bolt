@@ -22,8 +22,8 @@
 
 //////////////////////////////////////////////////////////////////////
 
-use std::env;
 use std::collections::HashMap;
+use std::env;
 
 extern crate neo4j;
 use neo4j::*;
