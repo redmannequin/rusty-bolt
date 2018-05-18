@@ -126,7 +126,7 @@ macro_rules! impl_From_Integer {
     ($T:ty) => {
         impl From<$T> for Value {
             fn from(val: $T) -> Self {
-                Value::Integer(val as i64)
+                Value::Integer(i64::from(val))
             }
         }
     }
@@ -210,13 +210,10 @@ impl_From_Integer!(i8);
 impl_From_Integer!(i16);
 impl_From_Integer!(i32);
 impl_From_Integer!(i64);
-impl_From_Integer!(isize);
 
 impl_From_Integer!(u8);
 impl_From_Integer!(u16);
 impl_From_Integer!(u32);
-impl_From_Integer!(u64);
-impl_From_Integer!(usize);
 
 impl_From_Float!(f32);
 impl_From_Float!(f64);
