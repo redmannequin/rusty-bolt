@@ -28,7 +28,9 @@ impl<T: Read + Write> ChunkStream<T> {
         let mut ret = Vec::new();
         let mut size = self.stream.read_u16::<BigEndian>()?;
         while size != 0 {
-            (&mut self.stream).take(size as u64).read_to_end(&mut ret)?;
+            (&mut self.stream)
+                .take(u64::from(size))
+                .read_to_end(&mut ret)?;
             size = self.stream.read_u16::<BigEndian>()?;
         }
         Ok(ret)

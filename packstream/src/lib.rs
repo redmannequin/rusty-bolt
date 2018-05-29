@@ -2,12 +2,10 @@
 
 extern crate byteorder;
 
-use std::fmt;
-use std::hash::Hash;
-use std::collections::HashMap;
-use std::iter::FromIterator;
-use std::io::{Read, Write};
-use std::convert::{TryFrom, TryInto};
+use std::{
+    collections::HashMap, convert::{TryFrom, TryInto}, fmt, hash::Hash, io::{Read, Write},
+    iter::FromIterator,
+};
 
 mod pack;
 mod unpack;
@@ -129,17 +127,17 @@ macro_rules! impl_From_Integer {
                 Value::Integer(i64::from(val))
             }
         }
-    }
+    };
 }
 
 macro_rules! impl_From_Float {
     ($T:ty) => {
         impl From<$T> for Value {
             fn from(val: $T) -> Self {
-               Value::Float(f64::from(val))
+                Value::Float(f64::from(val))
             }
         }
-    }
+    };
 }
 
 impl From<bool> for Value {
@@ -235,7 +233,7 @@ macro_rules! pat_cond {
             $P => true,
             _ => false,
         }
-    }
+    };
 }
 
 impl ValueMatch for Value {
@@ -272,9 +270,11 @@ impl ValueMatch for Value {
     }
 }
 
+#[derive(Clone)]
 pub enum Data {
     Record(Vec<Value>),
 }
+
 impl fmt::Debug for Data {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {

@@ -1,5 +1,6 @@
-use std::io::{self, Write};
-use std::collections::HashMap;
+use std::{
+    collections::HashMap, io::{self, Write},
+};
 
 use byteorder::{BigEndian, WriteBytesExt};
 
@@ -91,7 +92,7 @@ fn pack_list(value: Vec<Value>, out: &mut Write) -> PackResult {
     } else {
         panic!("List too big to pack");
     }
-    for val in value{
+    for val in value {
         val.pack(out)?;
     }
     Ok(())

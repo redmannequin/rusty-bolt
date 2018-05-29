@@ -2,10 +2,9 @@ use std::collections::HashMap;
 
 use bolt::{BoltStream, BoltSummary};
 
-extern crate packstream;
 use packstream::{Data, Value};
 
-const USER_AGENT: &'static str = "rusty-bolt/0.1.0";
+const USER_AGENT: &str = "rusty-bolt/0.1.0";
 
 pub struct CypherStream {
     bolt: BoltStream,
@@ -37,8 +36,8 @@ impl CypherStream {
 
                 info!("Connected to server version {:?}", server_version);
                 Ok(CypherStream {
-                    bolt: bolt,
-                    server_version: server_version,
+                    bolt,
+                    server_version,
                     bookmark: None,
                 })
             }
@@ -143,7 +142,7 @@ impl CypherStream {
             Some(header) => match header {
                 BoltSummary::Success(metadata) => Ok(StatementResult {
                     header: metadata,
-                    body: body,
+                    body,
                 }),
                 BoltSummary::Ignored(metadata) => Err(metadata),
                 BoltSummary::Failure(metadata) => Err(metadata),
@@ -191,14 +190,11 @@ impl CypherStream {
         let summary = self.bolt.fetch_summary(result.body);
         info!("SUMMARY {:?}", summary);
         self.bolt.compact_responses();
-        match summary {
-            Some(BoltSummary::Failure(_)) => {
-                self.bolt.ack_failure();
-                self.bolt.ignore_response();
-                self.bolt.send();
-            }
-            _ => (),
-        };
+        if let Some(BoltSummary::Failure(_)) = summary {
+            self.bolt.ack_failure();
+            self.bolt.ignore_response();
+            self.bolt.send();
+        }
         summary
     }
 }
@@ -210,7 +206,7 @@ pub struct StatementResult {
 }
 impl StatementResult {
     pub fn keys(&self) -> &Value {
-        self.header.get("fields").unwrap()
+        &self.header["fields"]
     }
 }
 

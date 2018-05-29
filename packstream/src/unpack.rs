@@ -1,5 +1,6 @@
-use std::io::{self, Read};
-use std::collections::HashMap;
+use std::{
+    collections::HashMap, io::{self, Read},
+};
 
 use byteorder::{BigEndian, ReadBytesExt};
 
@@ -106,8 +107,5 @@ fn unpack_structure(size: usize, stream: &mut Read) -> UnpackResult {
     for _ in 0..size {
         fields.push(unpack(stream)?);
     }
-    Ok(Value::Structure {
-        signature,
-        fields,
-    })
+    Ok(Value::Structure { signature, fields })
 }

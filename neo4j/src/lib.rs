@@ -1,19 +1,17 @@
+extern crate byteorder;
 #[macro_use]
 extern crate log;
-
 #[macro_use]
 extern crate packstream;
 
-extern crate byteorder;
-
 pub mod bolt;
-pub mod cypher;
 mod chunk;
+pub mod cypher;
 
 use std::collections::HashMap;
 
-use cypher::{CypherStream, StatementResult};
 use bolt::{BoltError, BoltSummary};
+use cypher::{CypherStream, StatementResult};
 pub use packstream::{Data, Value};
 
 pub enum Neo4jError {
@@ -127,7 +125,8 @@ impl Neo4jDB {
 
 impl Neo4jOperations for Neo4jDB {
     fn run(&mut self, statement: &str, parameters: HashMap<&str, Value>) -> NeoResult<QueryResult> {
-        let result = self.conn
+        let result = self
+            .conn
             .run(statement, parameters)
             .map_err(Neo4jError::RunFailure)?;
         Ok(QueryResult::new(result, &mut self.conn))
@@ -154,7 +153,7 @@ impl<'a> QueryResult<'a> {
 
     pub fn maps(self) -> Neo4jMapIter<'a> {
         let keys = self.keys();
-        Neo4jMapIter { inner: self, keys  }
+        Neo4jMapIter { inner: self, keys }
     }
 
     pub fn keys(&self) -> Vec<String> {
@@ -296,7 +295,13 @@ impl Rel {
                     .remove(0)
                     .into_map()
                     .ok_or("Props field is not a Map")?;
-                Ok(Rel{ id, src, dst, label, props })
+                Ok(Rel {
+                    id,
+                    src,
+                    dst,
+                    label,
+                    props,
+                })
             }
             _ => Err("Value is not an relationship"),
         }

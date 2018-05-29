@@ -1,10 +1,7 @@
-use std::collections::{HashMap, VecDeque};
-use std::error::Error;
-use std::fmt;
-use std::io::prelude::*;
-use std::io;
-use std::net::{TcpStream, ToSocketAddrs};
-use std::result;
+use std::{
+    collections::{HashMap, VecDeque}, error::Error, fmt, io::{self, prelude::*},
+    net::{TcpStream, ToSocketAddrs}, result,
+};
 
 use packstream::{Data, Value};
 
@@ -90,7 +87,7 @@ impl BoltStream {
                             responses: VecDeque::new(),
                             responses_done: 0,
                             current_response_index: 0,
-                            protocol_version: protocol_version,
+                            protocol_version,
                         })
                     }
                     Err(_) => Err(BoltError::Handshake("Error on read")),
@@ -118,11 +115,11 @@ impl BoltStream {
                 fields: vec![
                     user_agent.into(),
                     parameters!(
-                    "scheme" => "basic",
-                    "principal" => user,
-                    "credentials" => password
-                ).into(),
-                ].into(),
+                        "scheme" => "basic",
+                        "principal" => user,
+                        "credentials" => password
+                    ).into(),
+                ],
             }.pack_into()
                 .unwrap(),
         );
@@ -163,7 +160,7 @@ impl BoltStream {
                 signature: sig::RUN,
                 fields: vec![
                     statement.into(),
-                    parameters.unwrap_or(Value::Map(HashMap::new())),
+                    parameters.unwrap_or_else(|| Value::Map(HashMap::new())),
                 ],
             }.pack_into()
                 .unwrap(),
@@ -241,15 +238,18 @@ impl BoltStream {
     pub fn fetch_failure(&mut self, response_id: usize) -> Option<BoltSummary> {
         let response_index = response_id - self.responses_done;
         let from_end = self.responses.len() - response_index;
-        let mut iter = self.responses.iter_mut().rev().skip(from_end).skip_while(
-            |r| match r.summary {
+        let mut iter = self
+            .responses
+            .iter_mut()
+            .rev()
+            .skip(from_end)
+            .skip_while(|r| match r.summary {
                 Some(ref s) => match *s {
                     BoltSummary::Failure(_) => false,
                     _ => true,
                 },
                 None => true,
-            },
-        );
+            });
         match iter.next() {
             Some(r) => r.summary.take(),
             None => None,
@@ -278,7 +278,7 @@ impl BoltStream {
         while self.current_response_index <= response_index {
             self.fetch();
         }
-        let ref mut response = self.responses[response_index];
+        let response = &mut self.responses[response_index];
         response.done = true;
         response.summary.take()
     }
@@ -291,7 +291,7 @@ impl BoltStream {
     ///
     fn fetch(&mut self) {
         let msg = self.receive();
-        let response = self.responses.get_mut(self.current_response_index).unwrap();
+        let response = &mut self.responses[self.current_response_index];
         match msg {
             Value::Structure {
                 signature,
@@ -363,6 +363,7 @@ impl BoltStream {
     }
 }
 
+#[derive(Clone)]
 pub enum BoltSummary {
     Success(HashMap<String, Value>),
     Ignored(HashMap<String, Value>),
@@ -378,6 +379,7 @@ impl fmt::Debug for BoltSummary {
     }
 }
 
+#[derive(Clone, Default)]
 pub struct BoltResponse {
     detail: VecDeque<Data>,
     summary: Option<BoltSummary>,
