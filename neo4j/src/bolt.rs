@@ -317,7 +317,7 @@ impl BoltStream {
                     } else {
                         match fields.remove(0) {
                             Value::Map(metadata) => {
-                                debug!("S: SUCCESS {:?}", metadata);
+                                debug!("S: SUCCESS({:?})", metadata);
                                 response.summary = Some(BoltSummary::Success(metadata));
                             }
                             _ => panic!("Non-map metadata"),
@@ -346,7 +346,7 @@ impl BoltStream {
                     } else {
                         match fields.remove(0) {
                             Value::Map(metadata) => {
-                                debug!("S: IGNORED {:?}", metadata);
+                                debug!("S: IGNORED({:?})", metadata);
                                 response.summary = Some(BoltSummary::Ignored(metadata));
                             }
                             _ => panic!("Non-map metadata"),
@@ -361,7 +361,7 @@ impl BoltStream {
                     } else {
                         match fields.remove(0) {
                             Value::Map(metadata) => {
-                                debug!("S: FAILURE {:?}", metadata);
+                                debug!("S: FAILURE({:?})", metadata);
                                 response.summary = Some(BoltSummary::Failure(metadata));
                             }
                             _ => panic!("Non-map metadata"),
@@ -370,7 +370,7 @@ impl BoltStream {
                 }
                 _ => panic!("Unknown response message with signature {:02X}", signature),
             },
-            _ => panic!("Response message is not a structure"),
+            _ => panic!("Response message is not a data or a summary"),
         }
     }
 }

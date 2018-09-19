@@ -1,24 +1,23 @@
 //////////////// LOGGING ///////////////////
 
-//use std::io::{stderr, Write};
-//
-//#[macro_use]
-//extern crate log;
-//use log::{LogRecord, LogLevel, LogMetadata};
-//
-//struct SimpleLogger;
-//
-//impl log::Log for SimpleLogger {
-//    fn enabled(&self, metadata: &LogMetadata) -> bool {
-//        metadata.level() <= LogLevel::Debug
-//    }
-//
-//    fn log(&self, record: &LogRecord) {
-//        if self.enabled(record.metadata()) {
-//            let _ = writeln!(stderr(), "[{}]  {}", record.level(), record.args());
-//        }
-//    }
-//}
+use std::io::{stderr, Write};
+
+extern crate log;
+use log::{LogRecord, LogLevel, LogMetadata};
+
+struct SimpleLogger;
+
+impl log::Log for SimpleLogger {
+    fn enabled(&self, metadata: &LogMetadata) -> bool {
+        metadata.level() <= LogLevel::Debug
+    }
+
+    fn log(&self, record: &LogRecord) {
+        if self.enabled(record.metadata()) {
+            let _ = writeln!(stderr(), "[{}]  {}", record.level(), record.args());
+        }
+    }
+}
 
 //////////////////////////////////////////////////////////////////////
 
@@ -33,7 +32,7 @@ fn main() {
 
     let statement = match args.nth(1) {
         Some(string) => string,
-        _ => String::from("RETURN $x"),
+        _ => String::from("MERGE p=(a:Person {name:'Alice'})-[r:KNOWS]->(b:Person {name:'Bob'}) RETURN a, r, p"),
     };
     let parameters = parameters!("x" => 1);
 
