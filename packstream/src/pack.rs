@@ -8,7 +8,7 @@ use super::Value;
 
 pub type PackResult = Result<(), io::Error>;
 
-pub fn pack(value: Value, out: &mut Write) -> PackResult {
+pub fn pack(value: Value, out: &mut dyn Write) -> PackResult {
     match value {
         Value::Null => pack_null(out),
         Value::Boolean(x) => pack_boolean(x, out),
@@ -21,15 +21,15 @@ pub fn pack(value: Value, out: &mut Write) -> PackResult {
     }
 }
 
-fn pack_null(out: &mut Write) -> PackResult {
+fn pack_null(out: &mut dyn Write) -> PackResult {
     out.write_u8(0xC0)
 }
 
-fn pack_boolean(value: bool, out: &mut Write) -> PackResult {
+fn pack_boolean(value: bool, out: &mut dyn Write) -> PackResult {
     out.write_u8(if value { 0xC3 } else { 0xC2 })
 }
 
-fn pack_integer(value: i64, out: &mut Write) -> PackResult {
+fn pack_integer(value: i64, out: &mut dyn Write) -> PackResult {
     if -0x10 <= value && value < 0x80 {
         // TINY_INT
         out.write_i8(value as i8)
@@ -52,12 +52,12 @@ fn pack_integer(value: i64, out: &mut Write) -> PackResult {
     }
 }
 
-fn pack_float(value: f64, out: &mut Write) -> PackResult {
+fn pack_float(value: f64, out: &mut dyn Write) -> PackResult {
     out.write_u8(0xC1)?;
     out.write_f64::<BigEndian>(value)
 }
 
-fn pack_string(value: &str, out: &mut Write) -> PackResult {
+fn pack_string(value: &str, out: &mut dyn Write) -> PackResult {
     let size: usize = value.len();
     if size < 0x10 {
         out.write_u8(0x80 + size as u8)?;
@@ -76,7 +76,7 @@ fn pack_string(value: &str, out: &mut Write) -> PackResult {
     out.write_all(value.as_bytes())
 }
 
-fn pack_list(value: Vec<Value>, out: &mut Write) -> PackResult {
+fn pack_list(value: Vec<Value>, out: &mut dyn Write) -> PackResult {
     let size = value.len();
     if size < 0x10 {
         out.write_u8(0x90 + size as u8)?;
@@ -98,7 +98,7 @@ fn pack_list(value: Vec<Value>, out: &mut Write) -> PackResult {
     Ok(())
 }
 
-fn pack_map(value: HashMap<String, Value>, out: &mut Write) -> PackResult {
+fn pack_map(value: HashMap<String, Value>, out: &mut dyn Write) -> PackResult {
     let size = value.len();
     if size < 0x10 {
         out.write_u8(0xA0 + size as u8)?;
@@ -121,7 +121,7 @@ fn pack_map(value: HashMap<String, Value>, out: &mut Write) -> PackResult {
     Ok(())
 }
 
-fn pack_structure(signature: u8, fields: Vec<Value>, out: &mut Write) -> PackResult {
+fn pack_structure(signature: u8, fields: Vec<Value>, out: &mut dyn Write) -> PackResult {
     let size = fields.len();
     if size < 0x10 {
         out.write_u8(0xB0 + size as u8)?;

@@ -8,14 +8,14 @@ use super::Value;
 
 pub type UnpackResult = Result<Value, io::Error>;
 
-pub fn unpack(stream: &mut Read) -> UnpackResult {
+pub fn unpack(stream: &mut dyn Read) -> UnpackResult {
     let marker = stream.read_u8()?;
     match marker {
-        0x00...0x7F => Ok(Value::Integer(i64::from(marker))),
-        0x80...0x8F => unpack_string((marker & 0x0F) as usize, stream),
-        0x90...0x9F => unpack_list((marker & 0x0F) as usize, stream),
-        0xA0...0xAF => unpack_map((marker & 0x0F) as usize, stream),
-        0xB0...0xBF => unpack_structure((marker & 0x0F) as usize, stream),
+        0x00..=0x7F => Ok(Value::Integer(i64::from(marker))),
+        0x80..=0x8F => unpack_string((marker & 0x0F) as usize, stream),
+        0x90..=0x9F => unpack_list((marker & 0x0F) as usize, stream),
+        0xA0..=0xAF => unpack_map((marker & 0x0F) as usize, stream),
+        0xB0..=0xBF => unpack_structure((marker & 0x0F) as usize, stream),
         0xC0 => Ok(Value::Null),
         0xC1 => Ok(Value::Float(stream.read_f64::<BigEndian>()?)),
         0xC2 => Ok(Value::Boolean(false)),
@@ -68,18 +68,18 @@ pub fn unpack(stream: &mut Read) -> UnpackResult {
             let size = stream.read_u16::<BigEndian>()? as usize;
             unpack_structure(size, stream)
         }
-        0xF0...0xFF => Ok(Value::Integer(i64::from(marker) - 0x100)),
+        0xF0..=0xFF => Ok(Value::Integer(i64::from(marker) - 0x100)),
         _ => panic!("Illegal value with marker {:02X}", marker),
     }
 }
 
-fn unpack_string(size: usize, stream: &mut Read) -> UnpackResult {
+fn unpack_string(size: usize, stream: &mut dyn Read) -> UnpackResult {
     let mut s = String::with_capacity(size);
     stream.take(size as u64).read_to_string(&mut s)?;
     Ok(Value::String(s))
 }
 
-fn unpack_list(size: usize, stream: &mut Read) -> UnpackResult {
+fn unpack_list(size: usize, stream: &mut dyn Read) -> UnpackResult {
     let mut value = Vec::with_capacity(size);
     for _ in 0..size {
         value.push(unpack(stream)?);
@@ -87,7 +87,7 @@ fn unpack_list(size: usize, stream: &mut Read) -> UnpackResult {
     Ok(Value::List(value))
 }
 
-fn unpack_map(size: usize, stream: &mut Read) -> UnpackResult {
+fn unpack_map(size: usize, stream: &mut dyn Read) -> UnpackResult {
     let mut value = HashMap::with_capacity(size);
     for _ in 0..size {
         let key = unpack(stream)?;
@@ -101,7 +101,7 @@ fn unpack_map(size: usize, stream: &mut Read) -> UnpackResult {
     Ok(Value::Map(value))
 }
 
-fn unpack_structure(size: usize, stream: &mut Read) -> UnpackResult {
+fn unpack_structure(size: usize, stream: &mut dyn Read) -> UnpackResult {
     let signature: u8 = stream.read_u8()?;
     let mut fields: Vec<Value> = Vec::with_capacity(size);
     for _ in 0..size {

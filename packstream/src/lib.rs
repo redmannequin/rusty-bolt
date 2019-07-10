@@ -1,5 +1,3 @@
-#![feature(try_from)]
-
 extern crate byteorder;
 
 use std::{
@@ -23,7 +21,7 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn pack(self, out: &mut Write) -> pack::PackResult {
+    pub fn pack(self, out: &mut dyn Write) -> pack::PackResult {
         pack::pack(self, out)
     }
 
@@ -33,7 +31,7 @@ impl Value {
         Ok(buf)
     }
 
-    pub fn unpack(stream: &mut Read) -> unpack::UnpackResult {
+    pub fn unpack(stream: &mut dyn Read) -> unpack::UnpackResult {
         unpack::unpack(stream)
     }
 
