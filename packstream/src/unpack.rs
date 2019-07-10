@@ -1,10 +1,11 @@
 use std::{
-    collections::HashMap, io::{self, Read},
+    collections::HashMap,
+    io::{self, Read},
 };
 
 use byteorder::{BigEndian, ReadBytesExt};
 
-use super::Value;
+use crate::Value;
 
 pub type UnpackResult = Result<Value, io::Error>;
 

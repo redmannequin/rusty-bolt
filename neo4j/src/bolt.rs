@@ -1,13 +1,18 @@
 use std::{
-    collections::{HashMap, VecDeque}, error::Error, fmt, io::{self, prelude::*},
-    net::{TcpStream, ToSocketAddrs}, result,
+    collections::{HashMap, VecDeque},
+    error::Error,
+    fmt,
+    io::{self, prelude::*},
+    net::{TcpStream, ToSocketAddrs},
+    result,
 };
 
-use packstream::{Data, Value};
+use packstream::{parameters, Data, Value};
 
 use byteorder::{BigEndian, ReadBytesExt};
+use log::debug;
 
-use super::chunk::ChunkStream;
+use crate::chunk::ChunkStream;
 
 const HANDSHAKE: [u8; 20] = [
     0x60, 0x60, 0xB0, 0x17,
@@ -118,10 +123,12 @@ impl BoltStream {
                         "scheme" => "basic",
                         "principal" => user,
                         "credentials" => password
-                    ).into(),
+                    )
+                    .into(),
                 ],
-            }.pack_into()
-                .unwrap(),
+            }
+            .pack_into()
+            .unwrap(),
         );
     }
 
@@ -133,8 +140,9 @@ impl BoltStream {
             Value::Structure {
                 signature: sig::ACK_FAILURE,
                 fields: vec![],
-            }.pack_into()
-                .unwrap(),
+            }
+            .pack_into()
+            .unwrap(),
         );
     }
 
@@ -146,8 +154,9 @@ impl BoltStream {
             Value::Structure {
                 signature: sig::RESET,
                 fields: vec![],
-            }.pack_into()
-                .unwrap(),
+            }
+            .pack_into()
+            .unwrap(),
         );
     }
 
@@ -162,8 +171,9 @@ impl BoltStream {
                     statement.into(),
                     parameters.unwrap_or_else(|| Value::Map(HashMap::new())),
                 ],
-            }.pack_into()
-                .unwrap(),
+            }
+            .pack_into()
+            .unwrap(),
         );
     }
 
@@ -175,8 +185,9 @@ impl BoltStream {
             Value::Structure {
                 signature: sig::DISCARD_ALL,
                 fields: vec![],
-            }.pack_into()
-                .unwrap(),
+            }
+            .pack_into()
+            .unwrap(),
         );
     }
 
@@ -188,8 +199,9 @@ impl BoltStream {
             Value::Structure {
                 signature: sig::PULL_ALL,
                 fields: vec![],
-            }.pack_into()
-                .unwrap(),
+            }
+            .pack_into()
+            .unwrap(),
         );
     }
 

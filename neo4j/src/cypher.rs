@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
-use bolt::{BoltStream, BoltSummary};
+use crate::bolt::{BoltStream, BoltSummary};
 
-use packstream::{Data, Value};
+use log::info;
+use packstream::{parameters, Data, Value};
 
 const USER_AGENT: &str = "rusty-bolt/0.1.0";
 
@@ -12,7 +13,7 @@ pub struct CypherStream {
     bookmark: Option<String>,
 }
 impl CypherStream {
-    pub fn connect(address: &str, user: &str, password: &str) -> ::bolt::Result<CypherStream> {
+    pub fn connect(address: &str, user: &str, password: &str) -> crate::bolt::Result<CypherStream> {
         info!("Connecting to bolt://{} as {}", address, user);
         match BoltStream::connect(address) {
             Ok(mut bolt) => {

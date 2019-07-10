@@ -1,10 +1,11 @@
 use std::{
-    collections::HashMap, io::{self, Write},
+    collections::HashMap,
+    io::{self, Write},
 };
 
 use byteorder::{BigEndian, WriteBytesExt};
 
-use super::Value;
+use crate::Value;
 
 pub type PackResult = Result<(), io::Error>;
 

@@ -1,7 +1,9 @@
-extern crate byteorder;
-
 use std::{
-    collections::HashMap, convert::{TryFrom, TryInto}, fmt, hash::Hash, io::{Read, Write},
+    collections::HashMap,
+    convert::{TryFrom, TryInto},
+    fmt,
+    hash::Hash,
+    io::{Read, Write},
     iter::FromIterator,
 };
 

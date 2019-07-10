@@ -25,12 +25,8 @@
 use std::collections::HashMap;
 use std::env;
 
-extern crate neo4j;
 use neo4j::*;
-
-#[macro_use]
-extern crate packstream;
-use packstream::Value;
+use packstream::{parameters, Value};
 
 fn main() {
     let mut args = env::args();

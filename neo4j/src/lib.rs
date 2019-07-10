@@ -1,9 +1,3 @@
-extern crate byteorder;
-#[macro_use]
-extern crate log;
-#[macro_use]
-extern crate packstream;
-
 pub mod bolt;
 mod chunk;
 pub mod cypher;
