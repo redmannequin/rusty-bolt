@@ -37,8 +37,8 @@ mod sig {
 
 #[derive(Debug)]
 pub enum BoltError {
-    Connect(&'static str),
-    Handshake(&'static str),
+    Connect(String),
+    Handshake(String),
     Socket(io::Error),
 }
 
@@ -95,11 +95,11 @@ impl BoltStream {
                             protocol_version,
                         })
                     }
-                    Err(_) => Err(BoltError::Handshake("Error on read")),
+                    Err(_) => Err(BoltError::Handshake(String::from("Error on read"))),
                 },
-                Err(_) => Err(BoltError::Handshake("Error on write")),
+                Err(_) => Err(BoltError::Handshake(String::from("Error on write"))),
             },
-            Err(_) => Err(BoltError::Connect("Error on connect")),
+            Err(err) => Err(BoltError::Connect(format!("Error on connect: {:?}", err))),
         }
     }
 
