@@ -1,10 +1,6 @@
-[package]
-name = "rusty-bolt"
-version = "0.1.0"
-authors = ["Nigel Small <nigel@nigelsmall.name>"]
-edition = "2018"
-
-[dependencies]
-log = "0.4.6"
-neo4j = { path = "neo4j" }
-packstream = { path = "packstream" }
+[workspace]
+members = [
+	"neo4j",
+	"packstream",
+	"bin"
+]

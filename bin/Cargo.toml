@@ -1,0 +1,9 @@
+[package]
+name = "bin"
+version = "0.1.0"
+authors = ["Flavio B <barinas.flavio@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+neo4j = { path = "../neo4j" }
+packstream = { path = "../packstream" }
