@@ -313,4 +313,8 @@ macro_rules! parameters(
             map
         }
     };
+
+    { $($key:expr => $value:expr,)* } => {
+        $crate::parameters!($($key => $value),*)
+    }
 );
